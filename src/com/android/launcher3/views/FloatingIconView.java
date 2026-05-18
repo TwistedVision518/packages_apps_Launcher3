@@ -422,6 +422,10 @@ public class FloatingIconView extends FrameLayout implements
         return mIconLoadResult == null ? false : mIconLoadResult.isThemed;
     }
 
+    public boolean usesSimpleRendering() {
+        return mIconLoadResult != null && mIconLoadResult.usesSimpleRendering;
+    }
+
     /**
      * Checks if the icon result is loaded. If true, we set the icon immediately. Else, we add a
      * callback to set the icon once the icon result is loaded.
@@ -586,12 +590,23 @@ public class FloatingIconView extends FrameLayout implements
 
         boolean isThemed = false;
         boolean usingCustomShape = false;
+<<<<<<< HEAD
         if (btvIcon != null) {
             isThemed = btvIcon.isThemed();
             usingCustomShape = (btvIcon.creationFlags & FLAG_CUSTOM_SHAPE) != 0;
+=======
+        boolean usesSimpleRendering = (btvIcon != null
+                && ThemedIconSettings.isIconPackDrawable(btvIcon))
+                || ThemedIconSettings.isThemedIconsEnabled(l);
+        if (btvIcon instanceof FastBitmapDrawable) {
+            FastBitmapDrawable fastBtvIcon = (FastBitmapDrawable) btvIcon;
+            isThemed = fastBtvIcon.isThemed();
+            usingCustomShape = (fastBtvIcon.creationFlags & FLAG_CUSTOM_SHAPE) != 0;
+>>>>>>> 915c04671c ([ax_animations] optimizing app open animations)
         }
 
-        IconLoadResult result = new IconLoadResult(info, isThemed, usingCustomShape);
+        IconLoadResult result = new IconLoadResult(info, isThemed, usingCustomShape,
+                usesSimpleRendering);
         result.btvDrawable = btvDrawableSupplier;
 
         final long fetchIconId = sFetchIconId++;
@@ -737,6 +752,7 @@ public class FloatingIconView extends FrameLayout implements
         final ItemInfo itemInfo;
         final boolean isThemed;
         final boolean usingCustomShape;
+        final boolean usesSimpleRendering;
         Supplier<Drawable> btvDrawable;
         Drawable drawable;
         Drawable badge;
@@ -744,10 +760,12 @@ public class FloatingIconView extends FrameLayout implements
         Runnable onIconLoaded;
         boolean isIconLoaded;
 
-        IconLoadResult(ItemInfo itemInfo, boolean isThemed, boolean usingCustomShape) {
+        IconLoadResult(ItemInfo itemInfo, boolean isThemed, boolean usingCustomShape,
+                boolean usesSimpleRendering) {
             this.itemInfo = itemInfo;
             this.isThemed = isThemed;
             this.usingCustomShape = usingCustomShape;
+            this.usesSimpleRendering = usesSimpleRendering;
         }
     }
 }
