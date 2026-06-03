@@ -2524,7 +2524,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             final DeviceProfile profile = mLauncher.getDeviceProfile();
             final int rotation = profile.getDeviceProperties().getRotationHint();
             final int widthPx = profile.getDeviceProperties().getWidthPx();
-            final int heightPx = profile.getDeviceProperties().getWidthPx();
+            final int heightPx = profile.getDeviceProperties().getHeightPx();
 
             final int rotationDelta = toLauncher
                     ? android.util.RotationUtils.deltaRotation(taskRotation, rotation)
@@ -2560,6 +2560,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         private final Rect mWindowStartBounds = new Rect();
         private final Rect mWindowOriginalBounds = new Rect();
 
+        private float mLastCornerRadius = -1f;
         private final Rect mTmpRect = new Rect();
         private final SurfaceTransaction mTransaction = new SurfaceTransaction();
 
@@ -2649,8 +2650,13 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
                     builder.setMatrix(mMatrix)
                             .setWindowCrop(mTmpRect)
-                            .setAlpha(getWindowAlpha(progress))
-                            .setCornerRadius(getCornerRadius(progress) / scale);
+                            .setAlpha(getWindowAlpha(progress));
+
+                    float cornerRadius = getCornerRadius(progress) / scale;
+                    if (Math.abs(mLastCornerRadius - cornerRadius) >= 4f || progress >= 1f) {
+                        builder.setCornerRadius(cornerRadius);
+                        mLastCornerRadius = cornerRadius;
+                    }
                 } else if (target.mode == MODE_OPENING) {
                     mMatrix.setTranslate(mTmpPos.x, mTmpPos.y);
                     builder.setMatrix(mMatrix)
