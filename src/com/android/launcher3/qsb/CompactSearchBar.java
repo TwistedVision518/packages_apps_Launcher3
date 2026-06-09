@@ -94,7 +94,7 @@ public class CompactSearchBar extends FrameLayout
         };
         ThemeManager.INSTANCE.get(mContext).addChangeListener(mThemeChangeListener);
         LauncherPrefs.getPrefs(mContext).registerOnSharedPreferenceChangeListener(this);
-        
+
         setRevealAmount(mRevealAmount);
     }
 
@@ -265,9 +265,9 @@ public class CompactSearchBar extends FrameLayout
             float cr = getCornerRadius();
             // concentric corners: inner radius = outer radius - distance
             float drawCr = Math.max(0, cr - inset);
-            
+
             RectF rectF = new RectF(left + inset, inset, right - inset, height - inset);
-            
+
             canvas.drawRoundRect(rectF, drawCr, drawCr, mBackgroundPaint);
 
             if (mStrokePaint != null) {
@@ -284,7 +284,7 @@ public class CompactSearchBar extends FrameLayout
             float targetWidth = height + (width - height) * mAmount;
             float left = (width - targetWidth) / 2f;
             float right = left + targetWidth;
-            
+
             outline.setRoundRect(Math.round(left), 0, Math.round(right), Math.round(height), getCornerRadius());
         }
 
