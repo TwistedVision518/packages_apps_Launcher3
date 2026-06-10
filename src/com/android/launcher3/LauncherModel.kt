@@ -116,6 +116,13 @@ constructor(
         }
     }
 
+    private val appLabelOverridesObserver =
+        object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                reloadIfActive()
+            }
+        }
+
     init {
         if (!dbFileName.isNullOrEmpty()) {
             initializer.initialize(this)
@@ -134,6 +141,15 @@ constructor(
             false, sandboxObserver
         )
         lifecycle.addCloseable { context.contentResolver.unregisterContentObserver(sandboxObserver) }
+
+        context.contentResolver.registerContentObserver(
+            AppLabelOverrideStore.APP_LABEL_OVERRIDES_URI,
+            false,
+            appLabelOverridesObserver
+        )
+        lifecycle.addCloseable {
+            context.contentResolver.unregisterContentObserver(appLabelOverridesObserver)
+        }
     }
 
     fun newModelCallbacks() = ModelLauncherCallbacks(this::enqueueModelUpdateTask)
