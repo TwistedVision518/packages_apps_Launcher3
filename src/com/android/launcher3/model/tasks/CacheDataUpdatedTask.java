@@ -72,6 +72,10 @@ public class CacheDataUpdatedTask implements ModelUpdateTask {
                                 && isValidShortcut(si) && cn != null
                                 && mPackages.contains(cn.getPackageName())) {
                             iconCache.getTitleAndIcon(si, si.getMatchingLookupFlag());
+                            String custom = com.android.launcher3.popup.SystemShortcut.getCustomName(taskController.getContext(), si);
+                            if (custom != null) {
+                                si.title = custom;
+                            }
                             return true;
                         }
                         return false;

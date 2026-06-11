@@ -99,6 +99,8 @@ public class AllAppsList {
      */
     private int mFlags;
 
+    @ApplicationContext private final Context mContext;
+
     /**
      * Boring constructor.
      */
@@ -110,6 +112,7 @@ public class AllAppsList {
         mIconCache = iconCache;
         mAppFilter = appFilter;
         mRepo = repositoryProvider;
+        mContext = context;
         mTrustData = TrustDatabaseHelper.getInstance(context);
         mIndex = new AlphabeticIndexCompat(LocaleList.getDefault());
     }
@@ -256,6 +259,10 @@ public class AllAppsList {
         for (AppInfo info : data) {
             if (info.user.equals(user) && packages.contains(info.componentName.getPackageName())) {
                 mIconCache.updateTitleAndIcon(info);
+                String custom = com.android.launcher3.popup.SystemShortcut.getCustomName(mContext, info);
+                if (custom != null) {
+                    info.title = custom;
+                }
                 info.sectionName = mIndex.computeSectionName(info.title);
                 mDataChanged = true;
             }
@@ -298,6 +305,10 @@ public class AllAppsList {
                 } else {
                     appInfo.intent = AppInfo.makeLaunchIntent(lai);
                     mIconCache.getTitleAndIcon(appInfo, lai, DEFAULT_LOOKUP_FLAG);
+                    String custom = com.android.launcher3.popup.SystemShortcut.getCustomName(mContext, appInfo);
+                    if (custom != null) {
+                        appInfo.title = custom;
+                    }
                     appInfo.sectionName = mIndex.computeSectionName(appInfo.title);
                     AppInfo.updateRuntimeFlagsForActivityTarget(appInfo, lai,
                             userCache.getUserInfo(user), apiWrapper, pmHelper);

@@ -880,6 +880,13 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
                 LauncherModel.updateItemInDatabase(mTarget, wsInfo);
             }
 
+            if (mItemInfo.getTargetComponent() != null) {
+                java.util.HashSet<String> packages = new java.util.HashSet<>();
+                packages.add(mItemInfo.getTargetComponent().getPackageName());
+                com.android.launcher3.LauncherAppState.getInstance(context).getModel()
+                        .onPackageIconsUpdated(packages, mItemInfo.user);
+            }
+
             updateUIWithNewName(newName);
 
             return true;
@@ -892,6 +899,13 @@ public abstract class SystemShortcut<T extends ActivityContext> extends ItemInfo
             if (mItemInfo instanceof WorkspaceItemInfo) {
                 WorkspaceItemInfo wsInfo = (WorkspaceItemInfo) mItemInfo;
                 LauncherModel.updateItemInDatabase(mTarget, wsInfo);
+            }
+
+            if (mItemInfo.getTargetComponent() != null) {
+                java.util.HashSet<String> packages = new java.util.HashSet<>();
+                packages.add(mItemInfo.getTargetComponent().getPackageName());
+                com.android.launcher3.LauncherAppState.getInstance(context).getModel()
+                        .onPackageIconsUpdated(packages, mItemInfo.user);
             }
 
             updateUIWithNewName(mSystemTitle.toString());
