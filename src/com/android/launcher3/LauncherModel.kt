@@ -125,15 +125,16 @@ constructor(
         lifecycle.addCloseable { destroy() }
         modelDelegate.init(this, mBgAllAppsList, mBgDataModel)
         lifecycle.addCloseable(dumpManager.register(this))
-
-        val sandboxObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                forceReload()
+        val sandboxObserver =
+            object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    forceReload()
+                }
             }
-        }
         context.contentResolver.registerContentObserver(
-            Settings.Secure.getUriFor("sandbox_config"),
-            false, sandboxObserver
+            Settings.Secure.getUriFor(SANDBOX_CONFIG),
+            false,
+            sandboxObserver,
         )
         lifecycle.addCloseable { context.contentResolver.unregisterContentObserver(sandboxObserver) }
     }
@@ -472,5 +473,6 @@ constructor(
 
     companion object {
         const val TAG = "Launcher.Model"
+        private const val SANDBOX_CONFIG = "sandbox_config"
     }
 }

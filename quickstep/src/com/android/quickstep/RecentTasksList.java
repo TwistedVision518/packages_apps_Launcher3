@@ -42,7 +42,7 @@ import androidx.annotation.VisibleForTesting;
 import com.android.launcher3.statehandlers.DesktopVisibilityController;
 import com.android.launcher3.util.DaggerSingletonTracker;
 import com.android.launcher3.util.LooperExecutor;
-import com.android.quickstep.util.AxAppLockerHelper;
+import com.android.quickstep.util.AxSandboxState;
 import com.android.quickstep.util.DesktopTask;
 import com.android.quickstep.util.ExternalDisplaysKt;
 import com.android.quickstep.util.GroupTask;
@@ -83,6 +83,7 @@ public class RecentTasksList {
     private final VirtualDeviceManager mVirtualDeviceManager;
     private final LooperExecutor mMainThreadExecutor;
     private final SystemUiProxy mSysUiProxy;
+    private final @Nullable AxSandboxState mSandboxState;
 
     // The list change id, increments as the task list changes in the system
     private int mChangeId;
@@ -120,12 +121,23 @@ public class RecentTasksList {
             SystemUiProxy sysUiProxy,
             TopTaskTracker topTaskTracker,
             DaggerSingletonTracker tracker) {
+        this(context, mainThreadExecutor, keyguardManager, virtualDeviceManager, sysUiProxy, null,
+                topTaskTracker, tracker);
+    }
+
+    public RecentTasksList(Context context, LooperExecutor mainThreadExecutor,
+            KeyguardManager keyguardManager, VirtualDeviceManager virtualDeviceManager,
+            SystemUiProxy sysUiProxy,
+            AxSandboxState sandboxState,
+            TopTaskTracker topTaskTracker,
+            DaggerSingletonTracker tracker) {
         mContext = context;
         mMainThreadExecutor = mainThreadExecutor;
         mKeyguardManager = keyguardManager;
         mVirtualDeviceManager = virtualDeviceManager;
         mChangeId = 1;
         mSysUiProxy = sysUiProxy;
+        mSandboxState = sandboxState;
         final IRecentTasksListener recentTasksListener = new IRecentTasksListener.Stub() {
             @Override
             public void onRecentTasksChanged() throws RemoteException {
@@ -177,6 +189,11 @@ public class RecentTasksList {
         mSysUiProxy.registerRecentTasksListener(recentTasksListener);
         tracker.addCloseable(
                 () -> mSysUiProxy.unregisterRecentTasksListener(recentTasksListener));
+        if (mSandboxState != null) {
+            mSandboxState.addChangeListener(this::onRecentTasksChanged);
+            tracker.addCloseable(
+                    () -> mSandboxState.removeChangeListener(this::onRecentTasksChanged));
+        }
 
         // We may receive onRunningTaskAppeared events later for tasks which have already been
         // included in the list returned by mSysUiProxy.getRunningTasks(), or may receive
@@ -492,7 +509,7 @@ public class RecentTasksList {
     }
 
     private boolean isAppLocked(Task.TaskKey key, SparseBooleanArray users) {
-        return AxAppLockerHelper.get().isAppLocked(key.getPackageName())
+        return (mSandboxState != null && mSandboxState.hasAppLock(key.getPackageName()))
                 || (users != null && users.get(key.userId));
     }
 
