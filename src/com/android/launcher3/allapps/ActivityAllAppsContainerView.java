@@ -1506,7 +1506,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         if (mSearchContainer != null && mSearchContainer.getLayoutParams() instanceof MarginLayoutParams) {
             MarginLayoutParams searchLp = (MarginLayoutParams) mSearchContainer.getLayoutParams();
             String searchPlacement = LauncherPrefs.ALL_APPS_SEARCH_PLACEMENT.get(getContext());
-            if ("2".equals(searchPlacement) && !isSearchBarFloating()) {
+            if ("bottom".equals(searchPlacement) && !isSearchBarFloating()) {
                 int extraMargin = getResources().getDimensionPixelSize(R.dimen.all_apps_search_bar_bottom_padding_extra);
                 int bottomPaddingArea = Math.max(insets.getInsets(WindowInsets.Type.systemBars()).bottom, mNavBarScrimHeight);
                 bottomPaddingArea = Math.max(bottomPaddingArea, insets.getInsets(WindowInsets.Type.ime()).bottom);
@@ -1987,7 +1987,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         }
 
         String searchPlacement = LauncherPrefs.ALL_APPS_SEARCH_PLACEMENT.get(getContext());
-        boolean searchBottom = "2".equals(searchPlacement) && !isSearchBarFloating();
+        boolean searchBottom = "bottom".equals(searchPlacement) && !isSearchBarFloating();
         if (searchBottom && mSearchContainer != null && mSearchContainer.getVisibility() == VISIBLE) {
             mHeaderPaint.setColor(mHeaderColor);
             mHeaderPaint.setAlpha((int) (getAlpha() * Color.alpha(mHeaderColor)));
