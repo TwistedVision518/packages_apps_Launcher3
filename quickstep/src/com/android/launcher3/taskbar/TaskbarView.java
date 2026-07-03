@@ -256,11 +256,16 @@ public class TaskbarView extends FrameLayout implements FolderIcon.FolderIconPar
 
         // TODO: Disable touch events on QSB otherwise it can crash.
         if (Utilities.showQSB(context)) {
-            boolean useGoogleStyle = LauncherPrefs.get(context).get(LauncherPrefs.QSB_STYLE_GOOGLE);
-            int qsbLayout = useGoogleStyle
-                    ? R.layout.search_container_hotseat_google
-                    : R.layout.search_container_hotseat;
-            mQsb = LayoutInflater.from(context).inflate(qsbLayout, this, false);
+            if (com.android.launcher3.qsb.DockSearchWidgetHelper.isCustomWidgetEnabled(context)) {
+                mQsb = LayoutInflater.from(context).inflate(
+                        R.layout.search_container_hotseat_widget, this, false);
+            } else {
+                boolean useGoogleStyle = LauncherPrefs.get(context).get(LauncherPrefs.QSB_STYLE_GOOGLE);
+                int qsbLayout = useGoogleStyle
+                        ? R.layout.search_container_hotseat_google
+                        : R.layout.search_container_hotseat;
+                mQsb = LayoutInflater.from(context).inflate(qsbLayout, this, false);
+            }
         } else {
             mQsb = LayoutInflater.from(context).inflate(R.layout.empty_view, this, false);
         }

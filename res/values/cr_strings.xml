@@ -143,6 +143,10 @@
     <string name="dock_music_search_summary">Start music search on pressing mic icon</string>
     <string name="dock_search_title">Google search bar</string>
     <string name="dock_search_summary">Search bar in the bottom dock</string>
+    <string name="dock_search_widget_default">Default Google search bar</string>
+    <string name="dock_search_widget_picker_title">Select dock search widget</string>
+    <string name="dock_search_widget_title">Dock search widget</string>
+    <string name="dock_search_widget_summary">Replace the dock search bar with a compatible search widget</string>
     <string name="compact_search_bar_title">Compact search bar</string>
     <string name="compact_search_bar_summary">Show a compact search pill above the app dock</string>
     <string name="compact_search_bar_action_title">Compact search action</string>

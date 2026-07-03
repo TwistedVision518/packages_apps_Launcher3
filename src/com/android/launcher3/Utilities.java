@@ -1120,7 +1120,10 @@ public final class Utilities {
     }
 
     public static boolean showQSB(Context context) {
-        return isGSAEnabled(context) && isQSBEnabled(context);
+        return isQSBEnabled(context)
+                && (isGSAEnabled(context)
+                        || com.android.launcher3.qsb.DockSearchWidgetHelper.isCustomWidgetEnabled(
+                                context));
     }
 
     private static boolean isQSBEnabled(Context context) {

@@ -120,6 +120,8 @@ public class SettingsHomescreen extends CollapsingToolbarBaseActivity
         if (LauncherPrefs.SHOW_HOTSEAT_BG.getSharedPrefKey().equals(key) ||
                 LauncherPrefs.HOTSEAT_OPACITY.getSharedPrefKey().equals(key) ||
                 LauncherPrefs.DOCK_SEARCH.getSharedPrefKey().equals(key) ||
+                LauncherPrefs.DOCK_SEARCH_WIDGET.getSharedPrefKey().equals(key) ||
+                LauncherPrefs.DOCK_SEARCH_WIDGET_PENDING_CONFIG.getSharedPrefKey().equals(key) ||
                 LauncherPrefs.COMPACT_SEARCH_BAR.getSharedPrefKey().equals(key) ||
                 LauncherPrefs.COMPACT_SEARCH_BAR_ACTION.getSharedPrefKey().equals(key) ||
                 LauncherPrefs.QSB_STYLE_GOOGLE.getSharedPrefKey().equals(key) ||
@@ -381,6 +383,7 @@ public class SettingsHomescreen extends CollapsingToolbarBaseActivity
         private final SharedPreferences.OnSharedPreferenceChangeListener mPrefListener =
                 (prefs, key) -> {
                     if (LauncherPrefs.DOCK_SEARCH.getSharedPrefKey().equals(key)
+                            || LauncherPrefs.DOCK_SEARCH_WIDGET.getSharedPrefKey().equals(key)
                             || LauncherPrefs.QSB_STYLE_GOOGLE.getSharedPrefKey().equals(key)
                             || LauncherPrefs.COMPACT_SEARCH_BAR.getSharedPrefKey().equals(key)) {
                         updateQsbStylePrefs();
@@ -394,15 +397,20 @@ public class SettingsHomescreen extends CollapsingToolbarBaseActivity
                     .get(LauncherPrefs.COMPACT_SEARCH_BAR);
             boolean isDockSearch = LauncherPrefs.get(getContext())
                     .get(LauncherPrefs.DOCK_SEARCH);
-            setQsbPrefEnabled(LauncherPrefs.QSB_STYLE_GOOGLE.getSharedPrefKey(), !isCompact);
+            boolean customWidget = com.android.launcher3.qsb.DockSearchWidgetHelper
+                    .isCustomWidgetEnabled(getContext());
+            setQsbPrefEnabled(LauncherPrefs.QSB_STYLE_GOOGLE.getSharedPrefKey(),
+                    !isCompact && !customWidget);
+            setQsbPrefEnabled(LauncherPrefs.DOCK_SEARCH_WIDGET.getSharedPrefKey(),
+                    isDockSearch && !isCompact);
             setQsbPrefEnabled(LauncherPrefs.COMPACT_SEARCH_BAR_ACTION.getSharedPrefKey(),
                     isDockSearch && isCompact);
             setQsbPrefEnabled(LauncherPrefs.HOTSEAT_QSB_OPACITY.getSharedPrefKey(),
-                    !isGoogleStyle || isCompact);
+                    (!isGoogleStyle || isCompact) && !customWidget);
             setQsbPrefEnabled(LauncherPrefs.HOTSEAT_QSB_STROKE_WIDTH.getSharedPrefKey(),
-                    !isGoogleStyle || isCompact);
+                    (!isGoogleStyle || isCompact) && !customWidget);
             setQsbPrefEnabled(LauncherPrefs.SEARCH_RADIUS_SIZE.getSharedPrefKey(),
-                    !isGoogleStyle || isCompact);
+                    (!isGoogleStyle || isCompact) && !customWidget);
         }
 
         private void setQsbPrefEnabled(String key, boolean enabled) {

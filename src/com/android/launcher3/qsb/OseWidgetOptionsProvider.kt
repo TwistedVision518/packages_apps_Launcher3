@@ -34,7 +34,8 @@ constructor(
 ) {
 
     open fun getOptionItems(): List<OptionItem> {
-        if (appWidgetSupportsReconfigure() && activityContext is BaseActivity) {
+        val providerInfo = oseWidgetManager.providerInfo.value
+        if (providerInfo?.configure != null && activityContext is BaseActivity) {
             val widgetSettingsItem =
                 OptionItem(
                     activityContext.getString(R.string.gadget_setup_text),

@@ -42,6 +42,7 @@ import com.android.launcher3.ShortcutAndWidgetContainer.TranslationProvider;
 import com.android.launcher3.celllayout.CellLayoutLayoutParams;
 import com.android.launcher3.LauncherPrefs;
 import com.android.launcher3.model.data.ItemInfo;
+import com.android.launcher3.qsb.DockSearchWidgetHelper;
 import com.android.launcher3.util.HorizontalInsettableView;
 import com.android.launcher3.util.LauncherBindableItemsContainer.ItemOperator;
 import com.android.launcher3.util.MultiPropertyFactory;
@@ -127,6 +128,10 @@ public class Hotseat extends CellLayout implements Insettable {
         }
         if (!Utilities.showQSB(context)) {
             return LayoutInflater.from(context).inflate(R.layout.empty_view, this, false);
+        }
+        if (DockSearchWidgetHelper.isCustomWidgetEnabled(context)) {
+            return LayoutInflater.from(context).inflate(
+                    R.layout.search_container_hotseat_widget, this, false);
         }
         boolean useGoogleStyle = LauncherPrefs.get(context).get(LauncherPrefs.QSB_STYLE_GOOGLE);
         int qsbLayout = useGoogleStyle

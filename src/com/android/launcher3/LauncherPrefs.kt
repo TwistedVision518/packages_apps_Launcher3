@@ -283,6 +283,10 @@ constructor(@ApplicationContext private val encryptedContext: Context) {
         @JvmField val COMPACT_SEARCH_BAR_ACTION = backedUpItem("pref_compact_search_bar_action", "google_search")
         @JvmField val QSB_STYLE_GOOGLE = backedUpItem("pref_qsb_style_google", true)
         @JvmField val DOCK_SEARCH = backedUpItem("pref_dock_search", true)
+        @JvmField val DOCK_SEARCH_WIDGET = backedUpItem("pref_dock_search_widget", "")
+        @JvmField
+        val DOCK_SEARCH_WIDGET_PENDING_CONFIG =
+            backedUpItem("pref_dock_search_widget_pending_config", false)
         @JvmField val DOCK_THEME = backedUpItem("pref_dock_theme", false)
         @JvmField val DRAWER_OPEN_KEYBOARD = backedUpItem("pref_drawer_open_keyboard", false)
         @JvmField val DRAWER_SCROLLBAR = backedUpItem("pref_drawer_scrollbar", true)

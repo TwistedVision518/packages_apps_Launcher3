@@ -33,7 +33,9 @@ import static com.android.launcher3.LauncherAnimUtils.SCALE_INDEX_WIDGET_TRANSIT
 import static com.android.launcher3.LauncherAnimUtils.SPRING_LOADED_EXIT_DELAY;
 import static com.android.launcher3.LauncherAnimUtils.WORKSPACE_SCALE_PROPERTY_FACTORY;
 import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_BIND_APPWIDGET;
+import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_BIND_DOCK_SEARCH_WIDGET;
 import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_BIND_PENDING_APPWIDGET;
+import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_CONFIGURE_DOCK_SEARCH_WIDGET;
 import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_CREATE_APPWIDGET;
 import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_CREATE_SHORTCUT;
 import static com.android.launcher3.LauncherConstants.ActivityCodes.REQUEST_HOME_ROLE;
@@ -184,6 +186,7 @@ import com.android.launcher3.compat.AccessibilityManagerCompat;
 import com.android.launcher3.compose.ComposeFacade;
 import com.android.launcher3.config.FeatureFlags;
 import com.android.launcher3.dagger.LauncherComponentProvider;
+import com.android.launcher3.qsb.OseWidgetManager;
 import com.android.launcher3.debug.TestEventEmitter;
 import com.android.launcher3.debug.TestEventEmitter.TestEvent;
 import com.android.launcher3.dragndrop.DragLayer;
@@ -830,6 +833,17 @@ public class Launcher extends StatefulActivity<LauncherState>
             return;
         }
 
+        if (requestCode == REQUEST_BIND_DOCK_SEARCH_WIDGET) {
+            OseWidgetManager dockWidgetManager =
+                    LauncherComponentProvider.get(this).getOseWidgetManager();
+            dockWidgetManager.handleBindActivityResult(resultCode, data, this);
+            return;
+        }
+
+        if (requestCode == REQUEST_CONFIGURE_DOCK_SEARCH_WIDGET) {
+            return;
+        }
+
         // Reset the startActivity waiting flag
         final PendingRequestArgs requestArgs = mPendingRequestArgs;
         setWaitingForResult(null);
@@ -1247,6 +1261,14 @@ public class Launcher extends StatefulActivity<LauncherState>
         }
 
         DragView.removeAllViews(this);
+
+        OseWidgetManager dockWidgetManager = LauncherComponentProvider.get(this).getOseWidgetManager();
+        if (!dockWidgetManager.tryStartPendingBindActivity(this)) {
+            dockWidgetManager.tryStartPendingConfigActivity(this);
+            // Bind + widget reload is async; retry config once the widget is ready.
+            mHandler.post(() -> dockWidgetManager.tryStartPendingConfigActivity(this));
+        }
+
         TraceHelper.INSTANCE.endSection();
     }
 
