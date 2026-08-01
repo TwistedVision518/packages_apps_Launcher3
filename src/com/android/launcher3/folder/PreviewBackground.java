@@ -182,46 +182,14 @@ public class PreviewBackground extends DelegatedCellDrawing {
         previewSize = grid.folderIconSizePx;
 
         boolean isEnlarged = false;
-        boolean enlargedBySpaceCheck = isEnlarged;
+        boolean enlargedBySpaceCheck = false;
         boolean enlargedByInfoSpan = false;
         boolean enlargedByLayoutParams = false;
         int infoSpanX = 0, infoSpanY = 0;
         int lpSpanX = 0, lpSpanY = 0;
-
-        if (invalidateDelegate instanceof FolderIcon) {
-            FolderIcon fi = (FolderIcon) invalidateDelegate;
-            if (fi.mInfo != null) {
-                infoSpanX = fi.mInfo.spanX;
-                infoSpanY = fi.mInfo.spanY;
-                if (infoSpanX == 2 && infoSpanY == 2) {
-                    isEnlarged = true;
-                    enlargedByInfoSpan = true;
-                }
-            }
-            if (!isEnlarged && fi.getLayoutParams() instanceof CellLayoutLayoutParams) {
-                CellLayoutLayoutParams lp = (CellLayoutLayoutParams) fi.getLayoutParams();
-                lpSpanX = lp.cellHSpan;
-                lpSpanY = lp.cellVSpan;
-                if (lpSpanX >= 2 && lpSpanY >= 2) {
-                    isEnlarged = true;
-                    enlargedByLayoutParams = true;
-                }
-            }
-        }
-
-        if (isEnlarged) {
-            int targetSize = (int) (availableSpaceX * 0.85f);
-            if (targetSize > previewSize) {
-                previewSize = targetSize;
-            }
-        }
-
+        
         basePreviewOffsetX = (availableSpaceX - previewSize) / 2;
-        if (isEnlarged) {
-            basePreviewOffsetY = topPadding;
-        } else {
-            basePreviewOffsetY = topPadding + grid.folderIconOffsetYPx;
-        }
+        basePreviewOffsetY = topPadding + grid.folderIconOffsetYPx;
 
         // Stroke width is 1dp
         mStrokeWidth = context.getResources().getDisplayMetrics().density;

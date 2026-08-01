@@ -836,15 +836,7 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
 
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mFolderName.getLayoutParams();
 
-        if (isEnlarged) {
-            int enlargedPreviewSize = Math.max(mActivity.getDeviceProfile().folderIconSizePx,
-                    (int) (MeasureSpec.getSize(widthMeasureSpec) * 0.85f));
-            int contentHeight = enlargedPreviewSize + (showLabel ? labelPadding + labelHeight : 0);
-            int topPadding = Math.max(0, (MeasureSpec.getSize(heightMeasureSpec)
-                    - contentHeight) / 2);
-            setPadding(getPaddingLeft(), topPadding, getPaddingRight(), getPaddingBottom());
-            lp.topMargin = enlargedPreviewSize + labelPadding;
-        } else if (shouldCenterIcon || !showLabel) {
+        if (shouldCenterIcon || !showLabel) {
             int cellHeightPx = iconSize + (showLabel ? labelPadding + labelHeight : 0);
             setPadding(getPaddingLeft(), Math.max(0, (MeasureSpec.getSize(heightMeasureSpec)
                     - cellHeightPx) / 2), getPaddingRight(), getPaddingBottom());
