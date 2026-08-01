@@ -319,7 +319,7 @@ constructor(@ApplicationContext private val encryptedContext: Context) {
         @JvmField val SHORT_PARALLAX = backedUpItem("pref_short_parallax", false)
         @JvmField val SHOW_DESKTOP_LABELS = backedUpItem("pref_desktop_show_labels", true)
         @JvmField val SHOW_DRAWER_LABELS = backedUpItem("pref_drawer_show_labels", true)
-        @JvmField val SHOW_HOTSEAT_BG = backedUpItem("pref_show_hotseat_bg", false)
+        @JvmField val HOTSEAT_BG_STYLE = backedUpItem("pref_hotseat_bg_style", "off")
         @JvmField val SHOW_QUICKSPACE = backedUpItem("pref_quickspace", true)
         @JvmField val SHOW_QUICKSPACE_ALT = backedUpItem("pref_quickspace_alt", false)
         @JvmField val QUICKSPACE_UI_STYLE = backedUpItem("pref_quickspace_style", "0")

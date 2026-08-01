@@ -120,7 +120,17 @@
 
     <!-- Hotseat Background -->
     <string name="hotseat_bg_title">Hotseat background</string>
-    <string name="hotseat_bg_summary">Add translucent background to the app dock</string>
+    <string name="hotseat_bg_summary">Style for the app dock background</string>
+    <string-array name="hotseat_bg_style_entries">
+        <item>Off</item>
+        <item>Old Style</item>
+        <item>New Style (Blur)</item>
+    </string-array>
+    <string-array name="hotseat_bg_style_values" translatable="false">
+        <item>off</item>
+        <item>old</item>
+        <item>blur</item>
+    </string-array>
 
     <!-- Background opacity -->
     <string name="background_opacity_title">Background opacity</string>

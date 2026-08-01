@@ -1361,10 +1361,9 @@ public class Launcher extends StatefulActivity<LauncherState>
         mLeftArrow.setOnClickListener(v -> mWorkspace.snapToPage(
                 mWorkspace.getCurrentPage() - 1));
 
-        if (LauncherPrefs.SHOW_HOTSEAT_BG.get(this)) {
-            mHotseat.setBackgroundResource(R.drawable.bkg_appseat);
-            mHotseat.getBackground().setAlpha(LauncherPrefs.HOTSEAT_OPACITY.get(this) * 255 / 100);
-        }
+        String hotseatStyle = LauncherPrefs.HOTSEAT_BG_STYLE.get(this);
+        int hotseatOpacity = LauncherPrefs.HOTSEAT_OPACITY.get(this);
+        mHotseat.setHotseatStyle(hotseatStyle, hotseatOpacity);
 
         // Setup the drag layer
         mDragLayer.setup(mDragController, mWorkspace);
