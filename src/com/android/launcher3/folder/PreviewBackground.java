@@ -181,7 +181,7 @@ public class PreviewBackground extends DelegatedCellDrawing {
         DeviceProfile grid = activity.getDeviceProfile();
         previewSize = grid.folderIconSizePx;
 
-        boolean isEnlarged = availableSpaceX > grid.getWorkspaceIconProfile().getIconSizePx() * 1.5;
+        boolean isEnlarged = false;
         boolean enlargedBySpaceCheck = isEnlarged;
         boolean enlargedByInfoSpan = false;
         boolean enlargedByLayoutParams = false;
