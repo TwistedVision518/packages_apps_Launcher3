@@ -471,6 +471,7 @@ android_library {
         "libGoogleFeed",
         "SettingsLib",
         "org.lineageos.platform",
+        "ax_blur",
         "chaldea.seraphixgoogle",
         "androidx.emoji2_emoji2",
         "lib-emoji2-emojipicker",

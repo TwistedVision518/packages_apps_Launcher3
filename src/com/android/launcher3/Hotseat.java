@@ -25,6 +25,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.view.Gravity;
@@ -34,6 +35,14 @@ import android.view.View;
 import android.view.ViewDebug;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.content.res.Configuration;
+import android.util.TypedValue;
+
+import com.android.axion.blur.AxBlurBackgroundRenderer;
+import com.android.axion.blur.AxBlurColors;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
@@ -59,6 +68,11 @@ import java.lang.annotation.RetentionPolicy;
  * View class that represents the bottom row of the home screen.
  */
 public class Hotseat extends CellLayout implements Insettable {
+
+    /** Hotseat background style constants */
+    public static final String HOTSEAT_STYLE_OFF = "off";
+    public static final String HOTSEAT_STYLE_OLD = "old";
+    public static final String HOTSEAT_STYLE_BLUR = "blur";
 
     public static final int ALPHA_CHANNEL_TASKBAR_ALIGNMENT = 0;
     public static final int ALPHA_CHANNEL_PREVIEW_RENDERER = 1;
@@ -98,6 +112,13 @@ public class Hotseat extends CellLayout implements Insettable {
     private final MultiPropertyFactory mIconsTranslationXFactory;
 
     private View mQsb;
+
+    // Blur hotseat style
+    private @Nullable AxBlurBackgroundRenderer mBlurRenderer;
+    private boolean mBlurStyleEnabled = false;
+    private float mBlurCornerRadius;
+    private int mBlurOverlayColor;
+    private int mBlurAlpha = 255;
 
     public Hotseat(Context context) {
         this(context, null);
@@ -432,6 +453,143 @@ public class Hotseat extends CellLayout implements Insettable {
             return mQsb;
         }
         return super.mapOverItems(op);
+    }
+
+    // ---- Blur hotseat style integration ----
+
+    /**
+     * Sets the hotseat background style.
+     * @param style one of {@link #HOTSEAT_STYLE_OFF}, {@link #HOTSEAT_STYLE_OLD},
+     *              {@link #HOTSEAT_STYLE_BLUR}
+     * @param opacity 0-100 opacity value for the background
+     */
+    public void setHotseatStyle(String style, int opacity) {
+        // Clean up any previous state
+        mBlurStyleEnabled = false;
+        setBackground(null);
+
+        switch (style) {
+            case HOTSEAT_STYLE_OLD:
+                setBackgroundResource(R.drawable.bkg_appseat);
+                if (getBackground() != null) {
+                    getBackground().setAlpha(opacity * 255 / 100);
+                }
+                break;
+            case HOTSEAT_STYLE_BLUR:
+                mBlurCornerRadius = getResources().getDimension(
+                        R.dimen.hotseat_blur_corner_radius);
+                mBlurOverlayColor = AxBlurColors.tint(getContext());
+                mBlurAlpha = opacity * 255 / 100;
+                mBlurStyleEnabled = true;
+                if (mBlurRenderer == null) {
+                    mBlurRenderer = new AxBlurBackgroundRenderer(this);
+                    if (isAttachedToWindow()) {
+                        mBlurRenderer.onAttachedToWindow();
+                    }
+                } else if (isAttachedToWindow()) {
+                    mBlurRenderer.onAttachedToWindow();
+                }
+                mBlurRenderer.setSurfaceAlpha(mBlurAlpha);
+                setWillNotDraw(false);
+                break;
+            case HOTSEAT_STYLE_OFF:
+            default:
+                // No background
+                break;
+        }
+        invalidate();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onAttachedToWindow();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onDetachedFromWindow();
+        }
+        super.onDetachedFromWindow();
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onVisibilityAggregated(isVisible);
+        }
+    }
+
+    /**
+     * Calculates the bounding rect of the icon area (ShortcutAndWidgetContainer)
+     * with padding for the blur pill shape, in this view's coordinate space.
+     *
+     * <p>Side margin: the pill is additionally constrained so it is at least
+     * {@code hotseat_blur_side_margin} away from each screen edge, giving visible
+     * breathing room regardless of icon count or grid padding.
+     *
+     * <p>Vertical centering: the ShortcutAndWidgetContainer reserves bottom padding
+     * for invisible icon labels. We compensate by subtracting that padding so the
+     * icon images end up evenly spaced inside the pill rather than riding high.
+     */
+    private void getIconAreaBounds(Rect outRect) {
+        View icons = getShortcutsAndWidgets();
+        int hPad = (int) getResources().getDimension(R.dimen.hotseat_blur_horizontal_padding);
+        int vPad = (int) getResources().getDimension(R.dimen.hotseat_blur_vertical_padding);
+        int sideMargin = (int) getResources().getDimension(R.dimen.hotseat_blur_side_margin);
+
+        int left = icons.getLeft() - hPad;
+        int top = icons.getTop() - vPad;
+        int right = icons.getRight() + hPad;
+        // Subtract the container's invisible-label bottom padding so icons sit centered,
+        // not shifted toward the top of the pill.
+        int bottom = icons.getBottom() - icons.getPaddingBottom() + vPad;
+
+        // Enforce side margin from screen edges.
+        left = Math.max(sideMargin, left);
+        right = Math.min(getWidth() - sideMargin, right);
+
+        // Clamp to view bounds.
+        outRect.set(
+                Math.max(0, left),
+                Math.max(0, top),
+                Math.min(getWidth(), right),
+                Math.min(getHeight(), bottom));
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        if (mBlurStyleEnabled && mBlurRenderer != null) {
+            Rect iconBounds = new Rect();
+            getIconAreaBounds(iconBounds);
+            if (!iconBounds.isEmpty()) {
+                boolean drewBlur = mBlurRenderer.draw(
+                        canvas,
+                        iconBounds.left, iconBounds.top,
+                        iconBounds.right, iconBounds.bottom,
+                        mBlurCornerRadius, mBlurOverlayColor, mBlurAlpha);
+
+                if (!drewBlur) {
+                    GradientDrawable fallback = new GradientDrawable();
+                    fallback.setShape(GradientDrawable.RECTANGLE);
+                    fallback.setCornerRadius(mBlurCornerRadius);
+                    
+                    int fallbackColor = mBlurOverlayColor;
+                    // Apply a 0xCC (80%) translucency constraint matching SystemUI's MusicPillBlurHost
+                    int translucentAlpha = (int) (0xCC * (mBlurAlpha / 255f));
+                    fallbackColor = (fallbackColor & 0x00FFFFFF) | (translucentAlpha << 24);
+                    
+                    fallback.setColor(fallbackColor);
+                    fallback.setBounds(iconBounds);
+                    fallback.draw(canvas);
+                }
+            }
+        }
+        super.dispatchDraw(canvas);
     }
 
     /** Dumps the Hotseat internal state */

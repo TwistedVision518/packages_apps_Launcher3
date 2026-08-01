@@ -40,6 +40,16 @@
 
     <dimen name="dynamic_grid_hotseat_side_padding">0dp</dimen>
 
+    <!-- Hotseat blur style -->
+    <!-- corner_radius is intentionally large so it always clamps to half the pill height,
+         producing true semicircular end caps on any screen density. -->
+    <dimen name="hotseat_blur_corner_radius">500dp</dimen>
+    <!-- horizontal inset from the icon grid's left/right edges (shrinks pill away from edges) -->
+    <dimen name="hotseat_blur_horizontal_padding">8dp</dimen>
+    <dimen name="hotseat_blur_vertical_padding">10dp</dimen>
+    <!-- gap between the pill and the screen edges; the primary control for horizontal breathing room -->
+    <dimen name="hotseat_blur_side_margin">16dp</dimen>
+
     <dimen name="qsb_g_icon_marginStart">20dp</dimen>
     <dimen name="qsb_lens_padding">8dp</dimen>
     <dimen name="qsb_marginEnd">8dp</dimen>
