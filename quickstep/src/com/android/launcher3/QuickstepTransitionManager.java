@@ -2046,19 +2046,26 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         } else if (!playFallBackAnimation) {
             boolean willPlayScalingRevealBlur =
                     !mLauncher.isInState(LauncherState.ALL_APPS);
+            // When the user has enabled the app launch blur toggle, use the scrim-based blur
+            // for the closing animation instead of (or alongside) ScalingWorkspaceRevealAnim's
+            // depth blur. Pass skipScrimBlur=false so createClosingScrimLayer runs.
+            final boolean useScrimBlur = isAppLaunchBlurEnabled();
             rectFSpringAnim = getClosingWindowAnimators(
                     anim, appTargets, launcherView, new PointF(), startRect,
-                    startWindowCornerRadius, /* skipScrimBlur= */ willPlayScalingRevealBlur);
+                    startWindowCornerRadius,
+                    /* skipScrimBlur= */ willPlayScalingRevealBlur && !useScrimBlur);
             if (mLauncher.isInState(LauncherState.ALL_APPS)) {
                 // Skip scaling all apps, otherwise FloatingIconView will get wrong
                 // layout bounds.
                 skipAllAppsScale = true;
             } else {
+                // When scrim blur is active, disable ScalingWorkspaceRevealAnim's own blur
+                // to avoid a double-blur conflict.
                 anim.play(
                         new ScalingWorkspaceRevealAnim(mLauncher, rectFSpringAnim,
                                 rectFSpringAnim.getTargetRect(),
                                 !fromPredictiveBack /* playAlphaReveal */,
-                                true /* playBlur */).getAnimators());
+                                !useScrimBlur /* playBlur */).getAnimators());
 
                 // We play StaggeredWorkspaceAnim as a part of the closing window animation.
                 playWorkspaceReveal = false;
