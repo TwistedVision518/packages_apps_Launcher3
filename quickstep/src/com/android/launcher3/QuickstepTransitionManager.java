@@ -49,7 +49,7 @@ import static com.android.launcher3.BaseActivity.INVISIBLE_ALL;
 import static com.android.launcher3.BaseActivity.INVISIBLE_BY_APP_TRANSITIONS;
 import static com.android.launcher3.BaseActivity.INVISIBLE_BY_PENDING_FLAGS;
 import static com.android.launcher3.BaseActivity.PENDING_INVISIBLE_BY_WALLPAPER_ANIMATION;
-import static com.android.launcher3.Flags.appLaunchBlur;
+
 import static com.android.launcher3.Flags.refactorTaskbarUiState;
 import static com.android.launcher3.Flags.syncAppLaunchWithTaskbarStash;
 import static com.android.launcher3.LauncherAnimUtils.SCALE_PROPERTY;
@@ -885,7 +885,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 if (taskbarInteractor != null) {
                     taskbarInteractor.showEduOnAppLaunch();
                 }
-                if (appLaunchBlur() && isAppLaunchBlurEnabled()) {
+                if (isAppLaunchBlurEnabled()) {
                     resetScrim(surfaceApplier, scrimLayer);
                 }
                 openingTargets.release();
@@ -1101,7 +1101,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                     }
                 }
 
-                if (appLaunchBlur() && isAppLaunchBlurEnabled() && scrimLayer != null && scrimLayer.isValid()) {
+                if (isAppLaunchBlurEnabled() && scrimLayer != null && scrimLayer.isValid()) {
                     SurfaceProperties builder = transaction.forSurface(scrimLayer);
                     builder.setAlpha(mBlurScrimAlpha.value);
                     builder.setBackgroundBlurRadius((int) mBlurRadius.value);
@@ -1176,7 +1176,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         appAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                if (appLaunchBlur() && isAppLaunchBlurEnabled()) {
+                if (isAppLaunchBlurEnabled()) {
                     resetScrim(surfaceApplier, scrimLayer);
                 }
                 openingTargets.release();
@@ -1260,7 +1260,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                     }
                 }
 
-                if (appLaunchBlur() && isAppLaunchBlurEnabled() && scrimLayer != null && scrimLayer.isValid()) {
+                if (isAppLaunchBlurEnabled() && scrimLayer != null && scrimLayer.isValid()) {
                     SurfaceProperties builder = transaction.forSurface(scrimLayer);
                     builder.setAlpha(percent * scrimAlpha);
                     builder.setBackgroundBlurRadius((int) (percent * mMaxBlurRadius));
@@ -1282,7 +1282,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
     private SurfaceControl addScrimLayer(SurfaceTransactionApplier applier,
             RemoteAnimationTargets targets) {
-        if (!appLaunchBlur() || !isAppLaunchBlurEnabled()) {
+        if (!isAppLaunchBlurEnabled()) {
             return null;
         }
 
@@ -1337,7 +1337,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
     @Nullable
     private SurfaceControl createClosingScrimLayer(SurfaceTransactionApplier applier,
             RemoteAnimationTarget[] targets) {
-        if (!appLaunchBlur() || !isAppLaunchBlurEnabled()) {
+        if (!isAppLaunchBlurEnabled()) {
             return null;
         }
 
@@ -1351,6 +1351,10 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
         SurfaceControl parent = launcherTarget != null ? launcherTarget.leash : null;
         if (parent == null || !parent.isValid()) {
+            ViewRootImpl viewRootImpl = mDragLayer.getViewRootImpl();
+            parent = viewRootImpl != null ? viewRootImpl.getSurfaceControl() : null;
+        }
+        if (parent == null || !parent.isValid()) {
             return null;
         }
 
@@ -1360,6 +1364,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 .setEffectLayer()
                 .setOpaque(false)
                 .setHidden(true)
+                .setParent(parent)
                 .build();
 
         final float[] colorComponents = new float[]{0f, 0f, 0f};
@@ -1368,7 +1373,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 .setColor(colorComponents)
                 .setAlpha(getScrimAlpha())
                 .setBackgroundBlurRadius(mMaxBlurRadius)
-                .reparent(launcherTarget.leash)
                 .setShow()
                 .setLayer(1000);
         applier.scheduleApply(transaction);
