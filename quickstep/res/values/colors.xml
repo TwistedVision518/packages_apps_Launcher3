@@ -81,6 +81,7 @@
 
     <!-- Recents overview -->
     <color name="recents_filter_icon">#333333</color>
+    <color name="recent_app_locked_icon_color">@color/materialColorOnSurface</color>
 
     <!-- Lottie light theme colors. -->
     <color name="lottie_blue400">#669df6</color>
