@@ -27,6 +27,7 @@ import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Bundle
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -34,6 +35,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import com.android.launcher3.Launcher
@@ -46,6 +49,8 @@ import com.android.launcher3.popup.Poppable
 import com.android.launcher3.popup.PoppableType
 import com.android.launcher3.util.ItemInflater
 import com.android.launcher3.util.MultiTranslateDelegate
+import com.android.launcher3.views.ActivityContext
+import com.android.launcher3.widget.util.WidgetSizeHandler
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -79,6 +84,8 @@ class WidgetStackView @JvmOverloads constructor(
     private var downY = 0f
     private var isSwiping = false
     private var snapAnimator: ValueAnimator? = null
+    private var itemInflater: ItemInflater<*>? = null
+    private val activityContext: ActivityContext = ActivityContext.lookupContext(context)
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var velocityTracker: VelocityTracker? = null
 
@@ -104,6 +111,8 @@ class WidgetStackView @JvmOverloads constructor(
 
     init {
         setWillNotDraw(false)
+        isFocusable = true
+        accessibilityDelegate = activityContext.accessibilityDelegate
         clipChildren = true
         val enforcedRadius = RoundedCornerEnforcement.computeEnforcedRadius(context)
         if (enforcedRadius > 0) {
@@ -119,18 +128,20 @@ class WidgetStackView @JvmOverloads constructor(
     fun bindStack(info: WidgetStackInfo, itemInflater: ItemInflater<*>) {
         this.stackInfo?.removeListener(this)
         this.stackInfo = info
-        info.addListener(this)
+        this.itemInflater = itemInflater
 
         removeAllViews()
         childViews.clear()
 
-        val widgets = info.getWidgets()
+        val widgets = info.getWidgets().toList()
         for (wInfo in widgets) {
             val hostView = itemInflater.inflateAppWidgetView(wInfo)
             if (hostView != null) {
                 childViews.add(hostView)
                 addView(hostView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
                 attachChildLongClickListener(hostView)
+            } else {
+                info.removeWidget(wInfo)
             }
         }
 
@@ -143,8 +154,10 @@ class WidgetStackView @JvmOverloads constructor(
         if (childViews.isEmpty()) {
             visibility = GONE
             post {
-                val launcher = Launcher.getLauncher(context)
-                launcher.removeItem(this, info, true, "Empty widget stack removed")
+                if (stackInfo === info && childViews.isEmpty()) {
+                    (activityContext as? Launcher)?.removeItem(
+                        this, info, true, "Empty widget stack removed")
+                }
             }
         }
     }
@@ -157,10 +170,7 @@ class WidgetStackView @JvmOverloads constructor(
     }
 
     fun getActiveWidgetInfo(): LauncherAppWidgetInfo? {
-        val widgets = stackInfo?.getWidgets() ?: return null
-        if (widgets.isEmpty()) return null
-        val idx = max(0, min(currentPage, widgets.size - 1))
-        return widgets.getOrNull(idx)
+        return getActiveWidgetView()?.tag as? LauncherAppWidgetInfo
     }
 
     fun getActiveWidgetView(): LauncherAppWidgetHostView? =
@@ -203,46 +213,65 @@ class WidgetStackView @JvmOverloads constructor(
 
     fun addWidgetView(info: LauncherAppWidgetInfo, view: View) {
         val stack = stackInfo ?: return
+        if (!WidgetStackInfo.hasMatchingSize(info, stack.spanX, stack.spanY)) return
         if (!stack.getWidgets().contains(info)) {
+            if (!stack.canAdd(info)) return
             stack.add(info)
         }
-        if (!childViews.contains(view)) {
-            childViews.add(view)
-            addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            attachChildLongClickListener(view)
+        val previousView = childViews.firstOrNull { it.tag == info }
+        if (previousView == view) return
+        val replacing = previousView != null
+        previousView?.let {
+            removeView(it)
+            childViews.remove(it)
         }
-        snapToPage(childViews.size - 1, true)
+        (view.parent as? ViewGroup)?.removeView(view)
+        val index = stack.getWidgets().indexOf(info).coerceAtMost(childViews.size)
+        childViews.add(index, view)
+        addView(view, index, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        attachChildLongClickListener(view)
+        if (view is LauncherAppWidgetHostView) {
+            WidgetSizeHandler.updateSizeRanges(view, info.spanX, info.spanY)
+        }
+        visibility = VISIBLE
+        snapToPage(if (replacing) currentPage else index, !replacing)
     }
 
     fun removeCurrentWidget(deleteFromDb: Boolean) {
-        val stack = stackInfo ?: return
-        val currentInfo = getActiveWidgetInfo() ?: return
-        val currentView = getActiveWidgetView()
-        val launcher = Launcher.getLauncher(context)
+        getActiveWidgetInfo()?.let { removeWidget(it, deleteFromDb) }
+    }
 
-        if (childViews.size <= 1) {
+    fun removeWidget(info: LauncherAppWidgetInfo, deleteFromDb: Boolean) {
+        val stack = stackInfo ?: return
+        if (!stack.getWidgets().contains(info)) return
+        val currentView = childViews.firstOrNull { it.tag == info }
+        val launcher = activityContext as? Launcher ?: return
+        snapAnimator?.cancel()
+
+        if (stack.getWidgets().size <= 1) {
             // Removing the last widget removes the entire stack
             launcher.removeItem(this, stack, deleteFromDb, "User removed last widget from stack")
             return
         }
 
-        // Remove active widget from stack
+        // Remove widget from stack
         if (currentView != null) {
             removeView(currentView)
             childViews.remove(currentView)
         }
-        stack.removeWidget(currentInfo)
+        stack.removeWidget(info)
 
         if (deleteFromDb) {
             launcher.modelWriter.deleteWidgetInfo(
-                currentInfo,
+                info,
                 launcher.appWidgetHolder,
                 "User removed widget from stack"
             )
+            stack.getWidgets().forEach { launcher.modelWriter.updateItemInDatabase(it) }
+            launcher.modelWriter.updateItemInDatabase(stack)
         }
 
-        currentPage = max(0, min(currentPage, childViews.size - 1))
-        stack.currentIndex = currentPage
+        currentPage = stack.currentIndex
         val w = width.toFloat()
         currentScrollX = if (w > 0f) currentPage * w else 0f
         snapToPage(currentPage, false)
@@ -268,9 +297,86 @@ class WidgetStackView @JvmOverloads constructor(
     }
 
     override fun onCurrentIndexChanged(index: Int) {
+        val launcher = activityContext as? Launcher
+        stackInfo?.let { launcher?.modelWriter?.updateItemInDatabase(it) }
         if (index != currentPage && index in 0 until childViews.size) {
             snapToPage(index, true)
         }
+        sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SCROLLED)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        val holder = activityContext.appWidgetHolder
+        if (holder != null) {
+            childViews.toList().forEach { child ->
+                val info = child.tag as? LauncherAppWidgetInfo ?: return@forEach
+                if (child is LauncherAppWidgetHostView && !info.isCustomWidget) {
+                    val attached = holder.attachViewToHostAndGetAttachedView(child)
+                    itemInflater?.prepareAppWidget(attached, info)
+                    if (attached !== child) addWidgetView(info, attached)
+                }
+            }
+        }
+        updateWidgetSizes()
+        stackInfo?.addListener(this)
+    }
+
+    fun updateWidgetSizes() {
+        childViews.forEach { child ->
+            val info = child.tag as? LauncherAppWidgetInfo ?: return@forEach
+            if (child is LauncherAppWidgetHostView) {
+                WidgetSizeHandler.updateSizeRanges(child, info.spanX, info.spanY)
+            }
+        }
+    }
+
+    fun updateWidgetStates(updates: Set<ItemInfo>) {
+        childViews.toList().forEach { child ->
+            if (child is PendingAppWidgetHostView && child.tag in updates) {
+                child.applyState()
+                child.postProviderAvailabilityCheck()
+            }
+        }
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.isScrollable = childViews.size > 1
+        if (currentPage > 0) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+        }
+        if (currentPage < childViews.lastIndex) {
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+        }
+    }
+
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        val targetPage = when (action) {
+            AccessibilityNodeInfo.ACTION_SCROLL_FORWARD -> currentPage + 1
+            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD -> currentPage - 1
+            else -> return super.performAccessibilityAction(action, arguments)
+        }
+        if (targetPage !in childViews.indices) return false
+        snapToPage(targetPage, true)
+        return true
+    }
+
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        if (childViews.size > 1) {
+            parent?.requestDisallowInterceptTouchEvent(disallowIntercept || isSwiping)
+        } else {
+            super.requestDisallowInterceptTouchEvent(disallowIntercept)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        snapAnimator?.cancel()
+        velocityTracker?.recycle()
+        velocityTracker = null
+        isSwiping = false
+        stackInfo?.removeListener(this)
+        super.onDetachedFromWindow()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -332,8 +438,9 @@ class WidgetStackView @JvmOverloads constructor(
                 val wasAnimating = snapAnimator?.isRunning == true
                 snapAnimator?.cancel()
                 isSwiping = wasAnimating
+                velocityTracker?.recycle()
+                velocityTracker = VelocityTracker.obtain().apply { addMovement(ev) }
                 if (childViews.size > 1) {
-                    // Disallow workspace page scrolling while touching down on stack
                     parent?.requestDisallowInterceptTouchEvent(true)
                 }
             }
@@ -341,7 +448,6 @@ class WidgetStackView @JvmOverloads constructor(
                 val dx = ev.x - downX
                 val dy = ev.y - downY
                 if (!isSwiping) {
-                    // If vertical drag dominates, allow workspace/drawer/shade to handle it
                     if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
                         parent?.requestDisallowInterceptTouchEvent(false)
                     }
@@ -353,7 +459,10 @@ class WidgetStackView @JvmOverloads constructor(
         }
 
         val handled = super.dispatchTouchEvent(ev)
-        // If child widget didn't consume ACTION_DOWN, consume it so we continue to receive MOVE/UP events
+        if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+            velocityTracker?.recycle()
+            velocityTracker = null
+        }
         if (ev.actionMasked == MotionEvent.ACTION_DOWN && !handled) {
             return true
         }
@@ -389,7 +498,6 @@ class WidgetStackView @JvmOverloads constructor(
                         parent?.requestDisallowInterceptTouchEvent(true)
                         return true
                     } else {
-                        // At the edge of the stack swiping towards next homescreen page
                         parent?.requestDisallowInterceptTouchEvent(false)
                     }
                 }
@@ -443,13 +551,14 @@ class WidgetStackView @JvmOverloads constructor(
                     return true
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
+                velocityTracker?.computeCurrentVelocity(1000)
+                val vx = velocityTracker?.xVelocity ?: 0f
+
                 if (isSwiping) {
-                    velocityTracker?.computeCurrentVelocity(1000)
-                    val vx = velocityTracker?.xVelocity ?: 0f
+                    isSwiping = false
                     val w = width.toFloat()
                     val progress = if (w > 0f) currentScrollX / w else currentPage.toFloat()
-
                     val deltaProgress = progress - currentPage
                     val targetPage = when {
                         vx < -500f -> currentPage + 1
@@ -460,32 +569,29 @@ class WidgetStackView @JvmOverloads constructor(
                     }.coerceIn(0, childViews.size - 1)
 
                     snapToPage(targetPage, animated = true, velocity = vx)
-                    isSwiping = false
                     velocityTracker?.recycle()
                     velocityTracker = null
                     return true
-                } else if (ev.actionMasked == MotionEvent.ACTION_UP) {
+                } else {
                     val dx = ev.x - downX
                     val dy = ev.y - downY
                     if (hypot(dx.toDouble(), dy.toDouble()) < touchSlop) {
                         val count = childViews.size
                         if (count > 1) {
                             val density = resources.displayMetrics.density
-                            val dotRadius = 2.5f * density
-                            val slotSpacing = 11f * density
-                            val bgHPad = 6f * density
-                            val bgVPad = 3f * density
+                            val dotRadius = 3f * density
+                            val slotSpacing = 14f * density
+                            val bgHPad = 8f * density
+                            val bgVPad = 4f * density
                             val totalTrackWidth = (count - 1) * slotSpacing
 
-                            val widgetBounds = getActiveWidgetBounds()
-                            val centerX = widgetBounds.centerX().toFloat()
-                            val trackStartX = centerX - (totalTrackWidth / 2f)
-                            val centerY = widgetBounds.bottom - (12f * density)
+                            val trackStartX = (width - totalTrackWidth) / 2f
+                            val centerY = height - (14f * density)
 
-                            val pillLeft = trackStartX - dotRadius - bgHPad - (6f * density)
-                            val pillRight = trackStartX + totalTrackWidth + dotRadius + bgHPad + (6f * density)
-                            val pillTop = centerY - dotRadius - bgVPad - (6f * density)
-                            val pillBottom = centerY + dotRadius + bgVPad + (6f * density)
+                            val pillLeft = trackStartX - dotRadius - bgHPad - (8f * density)
+                            val pillRight = trackStartX + totalTrackWidth + dotRadius + bgHPad + (8f * density)
+                            val pillTop = centerY - dotRadius - bgVPad - (8f * density)
+                            val pillBottom = centerY + dotRadius + bgVPad + (8f * density)
 
                             if (ev.x in pillLeft..pillRight && ev.y in pillTop..pillBottom) {
                                 val relX = ev.x - trackStartX
@@ -503,6 +609,17 @@ class WidgetStackView @JvmOverloads constructor(
                     }
                 }
                 isSwiping = false
+                velocityTracker?.recycle()
+                velocityTracker = null
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (isSwiping) {
+                    isSwiping = false
+                    val w = width.toFloat()
+                    val progress = if (w > 0f) currentScrollX / w else currentPage.toFloat()
+                    val targetPage = progress.roundToInt().coerceIn(0, childViews.size - 1)
+                    snapToPage(targetPage, animated = true)
+                }
                 velocityTracker?.recycle()
                 velocityTracker = null
             }
@@ -545,7 +662,6 @@ class WidgetStackView @JvmOverloads constructor(
         }.coerceIn(200L, 340L)
 
         // Apple / One UI fluid spring-like deceleration curve:
-        // High initial responsiveness, zero jarring bounce, smooth settling
         val fluidInterpolator = PathInterpolator(0.16f, 1f, 0.3f, 1f)
 
         snapAnimator = ValueAnimator.ofFloat(startScrollX, targetScrollX).apply {
@@ -591,23 +707,20 @@ class WidgetStackView @JvmOverloads constructor(
         if (w <= 0f) return
 
         val density = resources.displayMetrics.density
-        val dotRadius = 2.5f * density
-        val slotSpacing = 11f * density
-        val activeWidth = 11f * density
-        val bgHPad = 6f * density
-        val bgVPad = 3f * density
+        val dotRadius = 3f * density
+        val slotSpacing = 14f * density
+        val activeWidth = 14f * density
+        val bgHPad = 8f * density
+        val bgVPad = 4f * density
 
         val totalTrackWidth = (count - 1) * slotSpacing
-
-        val widgetBounds = getActiveWidgetBounds()
-        val centerX = widgetBounds.centerX().toFloat()
-        val trackStartX = centerX - (totalTrackWidth / 2f)
-        val centerY = widgetBounds.bottom - (12f * density)
+        val trackStartX = (width - totalTrackWidth) / 2f
+        val centerY = height - (14f * density)
 
         // Progress of current scroll (clamped between 0 and count - 1)
         val progress = (currentScrollX / w).coerceIn(0f, (count - 1).toFloat())
 
-        // 1. Draw capsule background pill on widget
+        // 1. Draw capsule background pill
         val bgRect = RectF(
             trackStartX - dotRadius - bgHPad,
             centerY - dotRadius - bgVPad,

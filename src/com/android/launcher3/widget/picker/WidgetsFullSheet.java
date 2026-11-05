@@ -60,10 +60,12 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.launcher3.BaseActivity;
 import com.android.launcher3.DeviceProfile;
+import com.android.launcher3.PendingAddItemInfo;
 import com.android.launcher3.R;
 import com.android.launcher3.anim.PendingAnimation;
 import com.android.launcher3.compat.AccessibilityManagerCompat;
 import com.android.launcher3.model.WidgetItem;
+import com.android.launcher3.model.data.WidgetStackInfo;
 import com.android.launcher3.pm.UserCache;
 import com.android.launcher3.pm.UserManagerState;
 import com.android.launcher3.views.RecyclerViewFastScroller;
@@ -581,7 +583,17 @@ public class WidgetsFullSheet extends BaseWidgetSheet
         onWidgetsBound();
     }
 
-    private List<WidgetsListBaseEntry> filterWidgetsForStack(List<WidgetsListBaseEntry> originalWidgets) {
+    @Override
+    protected boolean canSelectWidgetForStack(PendingAddItemInfo info) {
+        return WidgetStackInfo.hasMatchingSize(info, mStackTargetSpanX, mStackTargetSpanY);
+    }
+
+    private boolean matchesStackSize(WidgetItem item) {
+        return item.widgetInfo != null
+                && item.spanX == mStackTargetSpanX && item.spanY == mStackTargetSpanY;
+    }
+
+    protected List<WidgetsListBaseEntry> filterWidgetsForStack(List<WidgetsListBaseEntry> originalWidgets) {
         if (mStackTargetSpanX <= 0 || mStackTargetSpanY <= 0 || originalWidgets == null) {
             return originalWidgets;
         }
@@ -592,16 +604,19 @@ public class WidgetsFullSheet extends BaseWidgetSheet
             }
             List<WidgetItem> matchingItems = new ArrayList<>();
             for (WidgetItem item : entry.mWidgets) {
-                if (isWidgetMatchingStack(item, mStackTargetSpanX, mStackTargetSpanY)) {
+                if (matchesStackSize(item)) {
                     matchingItems.add(item);
                 }
             }
             if (!matchingItems.isEmpty()) {
-                if (entry instanceof WidgetsListHeaderEntry) {
-                    filtered.add(WidgetsListHeaderEntry.create(
-                            entry.mPkgItem,
-                            entry.mTitleSectionName,
-                            matchingItems));
+                if (entry instanceof WidgetsListHeaderEntry header) {
+                    WidgetsListHeaderEntry filteredHeader = header.isSearchEntry()
+                            ? WidgetsListHeaderEntry.createForSearch(
+                                    header.mPkgItem, header.mTitleSectionName, matchingItems)
+                            : WidgetsListHeaderEntry.create(
+                                    header.mPkgItem, header.mTitleSectionName, matchingItems);
+                    filtered.add(header.isWidgetListShown()
+                            ? filteredHeader.withWidgetListShown() : filteredHeader);
                 } else if (entry instanceof WidgetsListContentEntry contentEntry) {
                     filtered.add(new WidgetsListContentEntry(
                             contentEntry.mPkgItem,
@@ -618,20 +633,7 @@ public class WidgetsFullSheet extends BaseWidgetSheet
         if (item == null || item.isShortcut() || item.widgetInfo == null) {
             return false;
         }
-        // Exact default span match
-        if (item.spanX == targetSpanX && item.spanY == targetSpanY) {
-            return true;
-        }
-        // Resizable match: can the widget be resized to the target stack dimensions?
-        LauncherAppWidgetProviderInfo info = item.widgetInfo;
-        boolean canFitX = (item.spanX == targetSpanX)
-                || ((info.resizeMode & AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
-                && targetSpanX >= info.minSpanX && targetSpanX <= info.maxSpanX);
-        boolean canFitY = (item.spanY == targetSpanY)
-                || ((info.resizeMode & AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
-                && targetSpanY >= info.minSpanY && targetSpanY <= info.maxSpanY);
-
-        return canFitX && canFitY;
+        return item.spanX == targetSpanX && item.spanY == targetSpanY;
     }
 
     @Override
@@ -1018,6 +1020,9 @@ public class WidgetsFullSheet extends BaseWidgetSheet
             handleClose(false);
             WidgetsFullSheet sheet = show(BaseActivity.fromContext(getContext()), false);
             sheet.restoreRecommendations(mRecommendedWidgets, mRecommendedWidgetsMap);
+            if (mStackSelectCallback != null) {
+                sheet.setStackTargetFilter(mStackTargetSpanX, mStackTargetSpanY, mStackSelectCallback);
+            }
             sheet.restoreHierarchyState(widgetsState);
             sheet.restoreAdapterStates(mAdapters);
             sheet.restorePreviousAdapterHolderType(getCurrentAdapterHolderType());
