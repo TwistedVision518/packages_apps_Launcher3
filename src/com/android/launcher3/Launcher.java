@@ -111,6 +111,7 @@ import static com.android.launcher3.testing.shared.TestProtocol.LAUNCHER_ACTIVIT
 import static com.android.launcher3.util.Executors.MAIN_EXECUTOR;
 import static com.android.launcher3.util.Executors.UI_HELPER_EXECUTOR;
 import static com.android.launcher3.util.ItemInfoMatcher.forFolderMatch;
+import static com.android.launcher3.util.ItemInfoMatcher.forStackMatch;
 import static com.android.launcher3.util.SettingsCache.TOUCHPAD_NATURAL_SCROLLING;
 
 import android.Manifest;
@@ -2496,10 +2497,15 @@ public class Launcher extends StatefulActivity<LauncherState>
         LauncherBindableItemsContainer visibleContainer =
                 op -> mapOverCellLayouts(containerArray, op);
 
-        // Order: Preferred item by itself or in folder, then by matching package/user
+        // Order: Preferred item by itself or in folder/stack, then by matching package/user
         View target = visibleContainer.getFirstMatch(
-                preferredItem, forFolderMatch(preferredItem),
-                packageAndUserAndApp, forFolderMatch(packageAndUserAndApp));
+                preferredItem, forFolderMatch(preferredItem), forStackMatch(preferredItem),
+                packageAndUserAndApp, forFolderMatch(packageAndUserAndApp), forStackMatch(packageAndUserAndApp));
+
+        if (target instanceof WidgetStackView stackView) {
+            View widgetView = stackView.getActiveWidgetView();
+            return widgetView != null ? widgetView : target;
+        }
 
         if (!(target instanceof FolderIcon folderIcon)) {
             return target;

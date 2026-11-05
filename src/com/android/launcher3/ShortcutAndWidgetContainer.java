@@ -44,6 +44,7 @@ import com.android.launcher3.model.data.ItemInfo;
 import com.android.launcher3.views.ActivityContext;
 import com.android.launcher3.widget.LauncherAppWidgetHostView;
 import com.android.launcher3.widget.NavigableAppWidgetHostView;
+import com.android.launcher3.widget.WidgetStackView;
 
 public class ShortcutAndWidgetContainer extends ViewGroup implements FolderIcon.FolderIconParent {
     static final String TAG = "ShortcutAndWidgetContainer";
@@ -131,7 +132,7 @@ public class ShortcutAndWidgetContainer extends ViewGroup implements FolderIcon.
 
     public void setupLp(View child) {
         CellLayoutLayoutParams lp = (CellLayoutLayoutParams) child.getLayoutParams();
-        if (child instanceof NavigableAppWidgetHostView) {
+        if (child instanceof NavigableAppWidgetHostView || child instanceof WidgetStackView) {
             DeviceProfile profile = mActivity.getDeviceProfile();
             final PointF appWidgetScale = profile.getAppWidgetScale((ItemInfo) child.getTag());
             lp.setup(mCellWidth, mCellHeight, invertLayoutHorizontally(), mCountX, mCountY,
@@ -172,7 +173,7 @@ public class ShortcutAndWidgetContainer extends ViewGroup implements FolderIcon.
         CellLayoutLayoutParams lp = (CellLayoutLayoutParams) child.getLayoutParams();
         final DeviceProfile dp = mActivity.getDeviceProfile();
 
-        if (child instanceof NavigableAppWidgetHostView) {
+        if (child instanceof NavigableAppWidgetHostView || child instanceof WidgetStackView) {
             final PointF appWidgetScale = dp.getAppWidgetScale((ItemInfo) child.getTag());
             lp.setup(mCellWidth, mCellHeight, invertLayoutHorizontally(), mCountX, mCountY,
                     appWidgetScale.x, appWidgetScale.y, mBorderSpace, dp.widgetPadding);
@@ -250,6 +251,14 @@ public class ShortcutAndWidgetContainer extends ViewGroup implements FolderIcon.
 
             nahv.setScaleToFit(Math.min(scaleX, scaleY));
             nahv.getTranslateDelegate().setTranslation(INDEX_WIDGET_CENTERING,
+                    -(lp.width - (lp.width * scaleX)) / 2.0f,
+                    -(lp.height - (lp.height * scaleY)) / 2.0f);
+        } else if (child instanceof WidgetStackView stackView) {
+            DeviceProfile profile = mActivity.getDeviceProfile();
+            final PointF appWidgetScale = profile.getAppWidgetScale((ItemInfo) child.getTag());
+            float scaleX = appWidgetScale.x;
+            float scaleY = appWidgetScale.y;
+            stackView.getTranslateDelegate().setTranslation(INDEX_WIDGET_CENTERING,
                     -(lp.width - (lp.width * scaleX)) / 2.0f,
                     -(lp.height - (lp.height * scaleY)) / 2.0f);
         }

@@ -4178,8 +4178,21 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
     }
 
     public LauncherAppWidgetHostView getWidgetForAppWidgetId(final int appWidgetId) {
-        return (LauncherAppWidgetHostView) mapOverItems((info, v) ->
-                (info instanceof LauncherAppWidgetInfo lawi) && lawi.appWidgetId == appWidgetId);
+        View matched = mapOverItems((info, v) -> {
+            if (info instanceof LauncherAppWidgetInfo lawi && lawi.appWidgetId == appWidgetId) {
+                return true;
+            }
+            if (v instanceof WidgetStackView stackView) {
+                return stackView.findWidgetViewById(appWidgetId) != null;
+            }
+            return false;
+        });
+        if (matched instanceof LauncherAppWidgetHostView) {
+            return (LauncherAppWidgetHostView) matched;
+        } else if (matched instanceof WidgetStackView stackView) {
+            return stackView.findWidgetViewById(appWidgetId);
+        }
+        return null;
     }
 
     void clearDropTargets() {

@@ -25,6 +25,7 @@ import androidx.annotation.NonNull;
 import com.android.launcher3.LauncherSettings.Favorites;
 import com.android.launcher3.model.data.FolderInfo;
 import com.android.launcher3.model.data.ItemInfo;
+import com.android.launcher3.model.data.WidgetStackInfo;
 import com.android.launcher3.shortcuts.ShortcutKey;
 
 import java.util.Collection;
@@ -87,6 +88,14 @@ public abstract class ItemInfoMatcher {
     public static Predicate<ItemInfo> forFolderMatch(Predicate<ItemInfo> childOperator) {
         return info -> info instanceof FolderInfo && ((FolderInfo) info).getContents().stream()
                 .anyMatch(childOperator);
+    }
+
+    /**
+     * Returns a matcher for items within widget stacks.
+     */
+    public static Predicate<ItemInfo> forStackMatch(Predicate<ItemInfo> childOperator) {
+        return info -> info instanceof WidgetStackInfo
+                && ((WidgetStackInfo) info).getWidgets().stream().anyMatch(childOperator);
     }
 
     /**
