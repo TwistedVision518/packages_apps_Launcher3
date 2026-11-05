@@ -50,7 +50,7 @@ import com.android.launcher3.popup.PoppableType
 import com.android.launcher3.util.ItemInflater
 import com.android.launcher3.util.MultiTranslateDelegate
 import com.android.launcher3.views.ActivityContext
-import com.android.launcher3.widget.util.WidgetSizeHandler
+import com.android.launcher3.widget.util.WidgetSizeHandler.Companion.updateSizeRanges
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -231,7 +231,7 @@ class WidgetStackView @JvmOverloads constructor(
         addView(view, index, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         attachChildLongClickListener(view)
         if (view is LauncherAppWidgetHostView) {
-            WidgetSizeHandler.updateSizeRanges(view, info.spanX, info.spanY)
+            view.updateSizeRanges(info.spanX, info.spanY)
         }
         visibility = VISIBLE
         snapToPage(if (replacing) currentPage else index, !replacing)
@@ -326,7 +326,7 @@ class WidgetStackView @JvmOverloads constructor(
         childViews.forEach { child ->
             val info = child.tag as? LauncherAppWidgetInfo ?: return@forEach
             if (child is LauncherAppWidgetHostView) {
-                WidgetSizeHandler.updateSizeRanges(child, info.spanX, info.spanY)
+                child.updateSizeRanges(info.spanX, info.spanY)
             }
         }
     }
