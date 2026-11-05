@@ -3201,10 +3201,7 @@ public class Launcher extends StatefulActivity<LauncherState>
         mPendingStackContainer = stack;
         int targetSpanX = widget != null ? widget.spanX : (stack != null ? stack.spanX : 2);
         int targetSpanY = widget != null ? widget.spanY : (stack != null ? stack.spanY : 2);
-        WidgetsFullSheet sheet = WidgetsFullSheet.show(this, true);
-        if (sheet != null) {
-            sheet.setStackTargetFilter(targetSpanX, targetSpanY, this::onWidgetSelectedForStack);
-        }
+        WidgetsFullSheet.showForStack(this, true, targetSpanX, targetSpanY, this::onWidgetSelectedForStack);
     }
 
     private void onWidgetSelectedForStack(PendingAddItemInfo info) {

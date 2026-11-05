@@ -151,6 +151,14 @@ public abstract class BaseWidgetSheet extends AbstractSlideInView<BaseActivity>
 
         scrollToWidgetCell(wc);
 
+        if (mStackSelectCallback != null) {
+            final PendingAddItemInfo info = (PendingAddItemInfo) wc.getTag();
+            if (info != null) {
+                addWidget(info);
+                return;
+            }
+        }
+
         if (mWidgetCellWithAddButton != null) {
             if (mWidgetCellWithAddButton.isShowingAddButton()) {
                 // If there is a add button currently showing, hide it.
