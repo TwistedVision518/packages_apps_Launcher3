@@ -567,7 +567,8 @@ public class WidgetsFullSheet extends BaseWidgetSheet
         mStackTargetSpanX = spanX;
         mStackTargetSpanY = spanY;
         setStackSelectCallback(onSelect);
-        for (AdapterHolder holder : mAdapters.values()) {
+        for (int i = 0; i < mAdapters.size(); i++) {
+            AdapterHolder holder = mAdapters.valueAt(i);
             if (holder != null && holder.mWidgetsListAdapter != null) {
                 holder.mWidgetsListAdapter.useExpandedList();
             }
@@ -854,7 +855,8 @@ public class WidgetsFullSheet extends BaseWidgetSheet
         sheet.mStackTargetSpanX = spanX;
         sheet.mStackTargetSpanY = spanY;
         sheet.setStackSelectCallback(onSelect);
-        for (AdapterHolder holder : sheet.mAdapters.values()) {
+        for (int i = 0; i < sheet.mAdapters.size(); i++) {
+            AdapterHolder holder = sheet.mAdapters.valueAt(i);
             if (holder != null && holder.mWidgetsListAdapter != null) {
                 holder.mWidgetsListAdapter.useExpandedList();
             }
