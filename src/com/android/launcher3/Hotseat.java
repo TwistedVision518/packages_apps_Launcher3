@@ -44,7 +44,8 @@ import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
-import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
+import com.android.axion.blur.AxBlurBackgroundRenderer;
+import com.android.axion.blur.AxBlurColors;
 import com.android.launcher3.ShortcutAndWidgetContainer.TranslationProvider;
 import com.android.launcher3.celllayout.CellLayoutLayoutParams;
 import com.android.launcher3.LauncherPrefs;
@@ -110,20 +111,15 @@ public class Hotseat extends CellLayout implements Insettable {
 
     private View mQsb;
 
-    private BackgroundBlurDrawable mBackgroundBlurDrawable;
+    private @Nullable AxBlurBackgroundRenderer mBlurRenderer;
     private GradientDrawable mBackgroundTintDrawable;
     private final Rect mPillRect = new Rect();
-    private final Rect mLastBlurBounds = new Rect();
-    private float mLastCornerRadius = -1f;
-    private int mLastBlurRadius = -1;
     private final Rect mTempCellRect1 = new Rect();
     private final Rect mTempCellRect2 = new Rect();
     private boolean mShowHotseatBg;
     private boolean mHotseatBlur;
     private int mBlurDepth;
     private int mOpacity;
-    private boolean mCrossWindowBlurEnabled;
-    private final Consumer<Boolean> mCrossWindowBlurListener = this::onCrossWindowBlurEnabledChanged;
     private final LauncherPrefChangeListener mPrefChangeListener = key -> updateBackgroundPreferences();
     private final StateListener<LauncherState> mStateListener = new StateListener<>() {
         @Override
@@ -438,9 +434,9 @@ public class Hotseat extends CellLayout implements Insettable {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        mCrossWindowBlurEnabled = CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
-        CrossWindowBlurListeners.getInstance().addListener(
-                getContext().getMainExecutor(), mCrossWindowBlurListener);
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onAttachedToWindow();
+        }
         LauncherPrefs.get(getContext()).addListener(mPrefChangeListener,
                 LauncherPrefs.SHOW_HOTSEAT_BG,
                 LauncherPrefs.HOTSEAT_BLUR,
@@ -455,20 +451,14 @@ public class Hotseat extends CellLayout implements Insettable {
 
     @Override
     protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        if (mBackgroundBlurDrawable != null) {
-            mBackgroundBlurDrawable.setVisible(false, false);
-            mBackgroundBlurDrawable.setCallback(null);
-            mBackgroundBlurDrawable = null;
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onDetachedFromWindow();
         }
-        mLastBlurBounds.setEmpty();
-        mLastCornerRadius = -1f;
-        mLastBlurRadius = -1;
+        super.onDetachedFromWindow();
         Launcher launcher = mActivity instanceof Launcher l ? l : null;
         if (launcher != null && launcher.getStateManager() != null) {
             launcher.getStateManager().removeStateListener(mStateListener);
         }
-        CrossWindowBlurListeners.getInstance().removeListener(mCrossWindowBlurListener);
         LauncherPrefs.get(getContext()).removeListener(mPrefChangeListener,
                 LauncherPrefs.SHOW_HOTSEAT_BG,
                 LauncherPrefs.HOTSEAT_BLUR,
@@ -480,17 +470,8 @@ public class Hotseat extends CellLayout implements Insettable {
     public void setAlpha(float alpha) {
         float oldAlpha = getAlpha();
         super.setAlpha(alpha);
-        if (mShowHotseatBg) {
-            if (alpha <= 0.01f && oldAlpha > 0.01f) {
-                // Hotseat is fading out — explicitly hide the blur drawable so SurfaceFlinger
-                // does not retain the blur region while the view is invisible to HWUI.
-                if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
-                    mBackgroundBlurDrawable.setVisible(false, false);
-                }
-            }
-            if (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f)) {
-                invalidate();
-            }
+        if (mShowHotseatBg && (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f))) {
+            invalidate();
         }
     }
 
@@ -506,6 +487,9 @@ public class Hotseat extends CellLayout implements Insettable {
     @Override
     public void onVisibilityAggregated(boolean isVisible) {
         super.onVisibilityAggregated(isVisible);
+        if (mBlurRenderer != null) {
+            mBlurRenderer.onVisibilityAggregated(isVisible);
+        }
         if (isVisible) {
             postInvalidate();
         }
@@ -519,26 +503,31 @@ public class Hotseat extends CellLayout implements Insettable {
         }
     }
 
-    private void onCrossWindowBlurEnabledChanged(boolean enabled) {
-        mCrossWindowBlurEnabled = enabled;
-        if (!enabled && mBackgroundBlurDrawable != null) {
-            mBackgroundBlurDrawable.setVisible(false, false);
-        }
-        invalidate();
-    }
-
     private void updateBackgroundPreferences() {
         Context context = getContext();
         mShowHotseatBg = LauncherPrefs.SHOW_HOTSEAT_BG.get(context);
         mHotseatBlur = LauncherPrefs.HOTSEAT_BLUR.get(context);
         mBlurDepth = LauncherPrefs.BLUR_DEPTH.get(context);
         mOpacity = LauncherPrefs.HOTSEAT_OPACITY.get(context);
+        if (mHotseatBlur) {
+            if (mBlurRenderer == null) {
+                mBlurRenderer = new AxBlurBackgroundRenderer(this);
+                if (isAttachedToWindow()) {
+                    mBlurRenderer.onAttachedToWindow();
+                }
+            }
+            mBlurRenderer.setEnabled(true);
+        } else if (mBlurRenderer != null) {
+            mBlurRenderer.setEnabled(false);
+            mBlurRenderer.clear();
+        }
         invalidate();
     }
 
     @Override
     protected boolean verifyDrawable(Drawable who) {
         return super.verifyDrawable(who)
+                || (mBlurRenderer != null && mBlurRenderer.verifyDrawable(who))
                 || (who == mBackgroundTintDrawable);
     }
 
@@ -550,16 +539,13 @@ public class Hotseat extends CellLayout implements Insettable {
 
     private void drawHotseatBackground(Canvas canvas) {
         if (!mShowHotseatBg || getVisibility() != VISIBLE || !isAttachedToWindow()) {
-            if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
-                mBackgroundBlurDrawable.setVisible(false, false);
+            if (mBlurRenderer != null) {
+                mBlurRenderer.clear();
             }
             return;
         }
 
         float iconAlpha = mShortcutsAndWidgets != null ? mShortcutsAndWidgets.getAlpha() : 1f;
-        // Do NOT hide the blur drawable based on icon alpha — icons can be animated to 0 during
-        // folder open/close spring animations. The blur capsule background must remain visible
-        // independently of icon alpha to avoid flickering. We only hide below when canBlur=false.
 
         DeviceProfile dp = mActivity.getDeviceProfile();
         int iconSize = dp.getWorkspaceIconProfile().getIconSizePx();
@@ -621,36 +607,22 @@ public class Hotseat extends CellLayout implements Insettable {
             cornerRadius = mPillRect.height() / 2f;
         }
 
-        boolean canBlur = mHotseatBlur && mCrossWindowBlurEnabled && mBlurDepth > 0;
+        boolean canBlur = mHotseatBlur && mBlurDepth > 0;
 
         if (canBlur) {
-            if (mBackgroundBlurDrawable == null && getViewRootImpl() != null) {
-                mBackgroundBlurDrawable = getViewRootImpl().createBackgroundBlurDrawable();
+            if (mBlurRenderer == null) {
+                mBlurRenderer = new AxBlurBackgroundRenderer(this);
+                if (isAttachedToWindow()) {
+                    mBlurRenderer.onAttachedToWindow();
+                }
             }
-            if (mBackgroundBlurDrawable != null) {
-                if (!mLastBlurBounds.equals(mPillRect)) {
-                    mBackgroundBlurDrawable.setBounds(mPillRect);
-                    mLastBlurBounds.set(mPillRect);
-                }
-                if (mLastCornerRadius != cornerRadius) {
-                    mBackgroundBlurDrawable.setCornerRadius(cornerRadius);
-                    mLastCornerRadius = cornerRadius;
-                }
-                if (mLastBlurRadius != mBlurDepth) {
-                    mBackgroundBlurDrawable.setBlurRadius(mBlurDepth);
-                    mLastBlurRadius = mBlurDepth;
-                }
-                if (!mBackgroundBlurDrawable.isVisible()) {
-                    mBackgroundBlurDrawable.setVisible(true, false);
-                }
-                if (!isDrawingBlurSnapshot()) {
-                    mBackgroundBlurDrawable.draw(canvas);
-                }
+            if (mBlurRenderer != null && !isDrawingBlurSnapshot()) {
+                mBlurRenderer.draw(canvas, mPillRect.left, mPillRect.top, mPillRect.right, mPillRect.bottom,
+                        cornerRadius, Color.TRANSPARENT, 255);
             }
         } else {
-            if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
-                mBackgroundBlurDrawable.setVisible(false, false);
-                mLastBlurBounds.setEmpty();
+            if (mBlurRenderer != null) {
+                mBlurRenderer.clear();
             }
         }
 

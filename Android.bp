@@ -470,6 +470,7 @@ android_library {
         "libGoogleFeed",
         "SettingsLib",
         "org.lineageos.platform",
+        "ax_blur",
         "chaldea.seraphixgoogle",
     ],
     manifest: "AndroidManifest-common.xml",
