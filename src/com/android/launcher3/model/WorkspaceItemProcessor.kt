@@ -49,6 +49,7 @@ import com.android.launcher3.model.data.IconRequestInfo
 import com.android.launcher3.model.data.ItemInfo
 import com.android.launcher3.model.data.ItemInfoWithIcon
 import com.android.launcher3.model.data.LauncherAppWidgetInfo
+import com.android.launcher3.model.data.WidgetStackInfo
 import com.android.launcher3.model.data.WorkspaceItemInfo
 import com.android.launcher3.pm.PackageInstallInfo
 import com.android.launcher3.pm.UserManagerState
@@ -123,6 +124,7 @@ class WorkspaceItemProcessor(
                 Favorites.ITEM_TYPE_DEEP_SHORTCUT -> processAppOrDeepShortcut()
                 Favorites.ITEM_TYPE_FOLDER,
                 Favorites.ITEM_TYPE_APP_PAIR -> processFolderOrAppPair()
+                Favorites.ITEM_TYPE_WIDGET_STACK -> processWidgetStack()
                 Favorites.ITEM_TYPE_APPWIDGET,
                 Favorites.ITEM_TYPE_CUSTOM_APPWIDGET -> processWidget()
                 Favorites.ITEM_TYPE_FILE_SYSTEM_FILE,
@@ -500,6 +502,22 @@ class WorkspaceItemProcessor(
         c.checkAndAddItem(collection, loadedItems, memoryLogger)
     }
 
+    private fun processWidgetStack() {
+        if (c.container != Favorites.CONTAINER_DESKTOP) {
+            c.markDeleted("Widget stack is not on the workspace", RestoreError.WIDGET_REMOVED)
+            return
+        }
+        val collection = WidgetStackInfo()
+        c.applyCommonProperties(collection)
+        collection.spanX = c.spanX.coerceAtLeast(1)
+        collection.spanY = c.spanY.coerceAtLeast(1)
+        collection.minSpanX = collection.spanX
+        collection.minSpanY = collection.spanY
+        collection.currentIndex = c.options
+        c.markRestored()
+        c.checkAndAddItem(collection, loadedItems, memoryLogger)
+    }
+
     /**
      * This method, similar to processAppShortcut above, verifies that a widget should be shown on
      * the home screen, updates the database accordingly, formats the data in such a way that it is
@@ -523,6 +541,7 @@ class WorkspaceItemProcessor(
         c.applyCommonProperties(appWidgetInfo)
         appWidgetInfo.spanX = c.spanX
         appWidgetInfo.spanY = c.spanY
+        appWidgetInfo.rank = c.rank
         appWidgetInfo.options = c.options
         appWidgetInfo.user = c.user
         appWidgetInfo.sourceContainer = c.appWidgetSource
@@ -537,7 +556,7 @@ class WorkspaceItemProcessor(
             )
             return
         }
-        if (!c.isOnWorkspaceOrHotseat) {
+        if (!c.isOnWorkspaceOrHotseat && c.container < 0) {
             c.markDeleted(
                 "processWidget: invalid Widget container != CONTAINER_DESKTOP nor CONTAINER_HOTSEAT." +
                     " id=${c.id}," +
@@ -748,6 +767,63 @@ class WorkspaceItemProcessor(
 
     private fun removeItems(ids: IntArray?) = ids?.forEach { loadedItems.remove(it) }
 
+    private fun processWidgetStackItems(modelDbController: ModelDbController) {
+        val desktopItems =
+            ArrayList(loadedItems.filter { it.container == Favorites.CONTAINER_DESKTOP })
+        val excludedScreens = IntSet()
+        if (LauncherPrefs.SHOW_QUICKSPACE.get(context)) {
+            desktopItems.add(
+                WorkspaceItemInfo().apply {
+                    container = Favorites.CONTAINER_DESKTOP
+                    screenId = WorkspaceLayoutManager.FIRST_SCREEN_ID
+                    spanX = idp.numSearchContainerColumns
+                    spanY = 1
+                }
+            )
+        }
+        loadedItems.filterIsInstance<LauncherAppWidgetInfo>()
+            .filter { it.container >= 0 }
+            .sortedWith(compareBy({ it.rank }, { it.id }))
+            .forEach { widget ->
+                val stack = loadedItems[widget.container] as? WidgetStackInfo
+                if (stack != null && stack.canAdd(widget)) {
+                    stack.add(widget)
+                } else {
+                    if (widget.spanX > idp.numColumns || widget.spanY > idp.numRows) {
+                        FileLog.d(TAG, "Widget ${widget.id} no longer fits the workspace grid")
+                        modelDbController.delete(
+                            "${Favorites._ID} = ?", arrayOf(widget.id.toString()))
+                        loadedItems.remove(widget.id)
+                        return@forEach
+                    }
+                    val position =
+                        workspaceItemSpaceFinder.findSpaceForItem(
+                            desktopItems, widget.spanX, widget.spanY, excludedScreens)
+                    widget.container = Favorites.CONTAINER_DESKTOP
+                    widget.screenId = position.screenId
+                    widget.cellX = position.cellX
+                    widget.cellY = position.cellY
+                    widget.rank = 0
+                    val writer = ContentWriter(context)
+                    widget.onAddToDatabase(writer)
+                    modelDbController.update(
+                        writer.getValues(context),
+                        "${Favorites._ID} = ?",
+                        arrayOf(widget.id.toString()),
+                    )
+                    desktopItems.add(widget)
+                }
+            }
+        loadedItems.filterIsInstance<WidgetStackInfo>().forEach { stack ->
+            if (stack.getWidgets().isEmpty()) {
+                modelDbController.delete("${Favorites._ID} = ?", arrayOf(stack.id.toString()))
+                loadedItems.remove(stack.id)
+            } else {
+                stack.currentIndex = stack.currentIndex
+            }
+        }
+    }
+
     /**
      * Applies any queued update data update tasks and data sanity checks and returns the final set
      * of workspace data. This includes:
@@ -766,6 +842,7 @@ class WorkspaceItemProcessor(
         // Remove dead items
         val itemsDeleted = c.commitDeleted()
 
+        processWidgetStackItems(modelDbController)
         processFolderItems()
         // After all items have been processed and added to the BgDataModel, this method
         // requests high-res icons for the items that are part of an app pair.

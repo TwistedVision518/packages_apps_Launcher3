@@ -53,6 +53,7 @@ import com.android.launcher3.views.AbstractSlideInView;
 import com.android.launcher3.widget.picker.model.WidgetPickerDataProvider.WidgetPickerDataChangeListener;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * Base class for various widgets popup
@@ -150,6 +151,14 @@ public abstract class BaseWidgetSheet extends AbstractSlideInView<BaseActivity>
 
         scrollToWidgetCell(wc);
 
+        if (mStackSelectCallback != null) {
+            final PendingAddItemInfo info = (PendingAddItemInfo) wc.getTag();
+            if (info != null) {
+                addWidget(info);
+                return;
+            }
+        }
+
         if (mWidgetCellWithAddButton != null) {
             if (mWidgetCellWithAddButton.isShowingAddButton()) {
                 // If there is a add button currently showing, hide it.
@@ -188,11 +197,38 @@ public abstract class BaseWidgetSheet extends AbstractSlideInView<BaseActivity>
         return mContent.getHeight() + getBottomOffsetPx();
     }
 
+    protected Consumer<PendingAddItemInfo> mStackSelectCallback;
+
+    public void setStackSelectCallback(Consumer<PendingAddItemInfo> callback) {
+        mStackSelectCallback = callback;
+    }
+
+    protected boolean canSelectWidgetForStack(PendingAddItemInfo info) {
+        return true;
+    }
+
     /**
      * Click handler for tap to add button. This handler assumes we are in the Launcher activity and
      * should not be used when the widget sheet is displayed elsewhere.
      */
     private void addWidget(@NonNull PendingAddItemInfo info) {
+        if (mStackSelectCallback != null) {
+            if (!canSelectWidgetForStack(info)) return;
+            final Consumer<PendingAddItemInfo> callback = mStackSelectCallback;
+            mStackSelectCallback = null;
+            final AtomicBoolean hasRun = new AtomicBoolean(false);
+            addOnCloseListener(() -> {
+                if (hasRun.get()) return;
+                hasRun.set(true);
+                Launcher launcher = Launcher.getLauncher(mActivityContext);
+                launcher.getStateManager().goToState(NORMAL, forSuccessCallback(() -> {
+                    callback.accept(info);
+                }));
+            });
+            close(/* animate= */ true);
+            return;
+        }
+
         // Using a boolean flag here to make sure the callback is only run once. This should never
         // happen because we close the sheet and it will be reconstructed the next time it is
         // needed.
@@ -275,6 +311,15 @@ public abstract class BaseWidgetSheet extends AbstractSlideInView<BaseActivity>
     public boolean onLongClick(View v) {
         TestLogging.recordEvent(TestProtocol.SEQUENCE_MAIN, "Widgets.onLongClick");
         v.cancelLongPress();
+
+        if (mStackSelectCallback != null) {
+            Object cell = v instanceof WidgetCell ? v : v.getParent();
+            if (cell instanceof WidgetCell widgetCell
+                    && widgetCell.getTag() instanceof PendingAddItemInfo info) {
+                addWidget(info);
+            }
+            return true;
+        }
 
         boolean result;
         if (v instanceof WidgetCell) {

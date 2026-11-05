@@ -153,6 +153,7 @@ import com.android.launcher3.util.RunnableList;
 import com.android.launcher3.util.StableViewInfo;
 import com.android.launcher3.views.FloatingIconView;
 import com.android.launcher3.widget.LauncherAppWidgetHostView;
+import com.android.launcher3.widget.WidgetStackView;
 import com.android.quickstep.LauncherBackAnimationController;
 import com.android.quickstep.RemoteAnimationTargets;
 import com.android.quickstep.SystemUiProxy;
@@ -2069,6 +2070,17 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             floatingWidget = FloatingWidgetView.getFloatingWidgetView(mLauncher,
                     (LauncherAppWidgetHostView) launcherView, targetRect, windowSize,
                     getWindowCornerRadius(mLauncher), isTransluscent, fallbackBackgroundColor);
+        } else if (launcherView instanceof WidgetStackView stackView) {
+            View activeWidget = stackView.getActiveWidgetView();
+            if (activeWidget instanceof LauncherAppWidgetHostView) {
+                Size windowSize = new Size(mDeviceProfile.getDeviceProperties().getWidthPx(),
+                        mDeviceProfile.getDeviceProperties().getHeightPx());
+                int fallbackBackgroundColor =
+                        FloatingWidgetView.getDefaultBackgroundColor(mLauncher, runningTaskTarget);
+                floatingWidget = FloatingWidgetView.getFloatingWidgetView(mLauncher,
+                        (LauncherAppWidgetHostView) activeWidget, targetRect, windowSize,
+                        getWindowCornerRadius(mLauncher), isTransluscent, fallbackBackgroundColor);
+            }
         } else if (launcherView != null && !RemoveAnimationSettingsTracker.INSTANCE.get(
                 mLauncher).isRemoveAnimationEnabled()) {
             floatingIconView = getFloatingIconView(mLauncher, launcherView, null,
@@ -2685,7 +2697,16 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             boolean launcherClosing =
                     launcherIsATargetWithMode(appTargets, MODE_CLOSING);
 
-            final boolean launchingFromWidget = mV instanceof LauncherAppWidgetHostView;
+            LauncherAppWidgetHostView widgetHostView = null;
+            if (mV instanceof LauncherAppWidgetHostView) {
+                widgetHostView = (LauncherAppWidgetHostView) mV;
+            } else if (mV instanceof WidgetStackView stackView) {
+                View activeWidget = stackView.getActiveWidgetView();
+                if (activeWidget instanceof LauncherAppWidgetHostView) {
+                    widgetHostView = (LauncherAppWidgetHostView) activeWidget;
+                }
+            }
+            final boolean launchingFromWidget = widgetHostView != null;
             final boolean launchingFromRecents = isLaunchingFromRecents(mV, appTargets);
             final boolean skipFirstFrame;
             boolean continuePreview = mPreview != null && !mPreview.removed
@@ -2698,7 +2719,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 else mPreview.restoreSource();
             }
             if (launchingFromWidget) {
-                composeWidgetLaunchAnimator(anim, (LauncherAppWidgetHostView) mV, appTargets,
+                composeWidgetLaunchAnimator(anim, widgetHostView, appTargets,
                         wallpaperTargets, nonAppTargets, launcherClosing);
                 addCujInstrumentation(anim, Cuj.CUJ_LAUNCHER_APP_LAUNCH_FROM_WIDGET);
                 skipFirstFrame = true;

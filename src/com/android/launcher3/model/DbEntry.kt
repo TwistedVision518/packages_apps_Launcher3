@@ -24,6 +24,7 @@ import com.android.launcher3.LauncherSettings.Favorites.CELLY
 import com.android.launcher3.LauncherSettings.Favorites.ITEM_TYPE_APPLICATION
 import com.android.launcher3.LauncherSettings.Favorites.ITEM_TYPE_APPWIDGET
 import com.android.launcher3.LauncherSettings.Favorites.ITEM_TYPE_APP_PAIR
+import com.android.launcher3.LauncherSettings.Favorites.ITEM_TYPE_WIDGET_STACK
 import com.android.launcher3.LauncherSettings.Favorites.ITEM_TYPE_FOLDER
 import com.android.launcher3.LauncherSettings.Favorites.SCREEN
 import com.android.launcher3.LauncherSettings.Favorites.SPANX
@@ -91,6 +92,8 @@ class DbEntry : ItemInfo(), Comparable<DbEntry> {
         when (itemType) {
             ITEM_TYPE_FOLDER,
             ITEM_TYPE_APP_PAIR -> return getFolderMigrationId()
+            ITEM_TYPE_WIDGET_STACK ->
+                return "widget-stack:${spanX}x${spanY}:" + mFolderItems.keys.sorted().joinToString(",")
             ITEM_TYPE_APPWIDGET ->
                 // mProvider is the app the widget belongs to and appWidgetId it's the unique
                 // is of the widget, we need both because if you remove a widget and then add it
