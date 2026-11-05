@@ -33,6 +33,8 @@ open class BlurBackgroundHelper
 @Inject
 constructor() {
 
+    open var isDrawingBlurSnapshot: Boolean = false
+
     open fun prepareToOpenFolder(folder: Folder) {}
 
     open fun drawFolderBlur(canvas: Canvas, pathWrapper: PathWrapper?, view: View) {}

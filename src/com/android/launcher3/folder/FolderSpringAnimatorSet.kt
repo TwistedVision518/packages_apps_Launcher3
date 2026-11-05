@@ -330,7 +330,6 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
             val launcher = launcherDelegate.launcher ?: return
             val scrimView = launcher.scrimView
             val workspace = launcher.workspace
-            val hotseat = launcher.hotseat
             val finalScrimAlpha = if (isDarkTheme(context)) 0.32f else 0.2f
             scrimView.setBackgroundColor(Color.BLACK)
             playSpringAnimation(
@@ -358,19 +357,6 @@ class FolderSpringAnimatorSet(val animatorSet: AnimatorSet) {
                 minVisibleChange = MIN_VISIBLE_CHANGE_SCALE,
                 property = SCALE_PROPERTY,
                 view = workspace,
-            )
-            playSpringAnimation(
-                context = context,
-                animatorSet = animatorSet,
-                isOpening = isOpening,
-                startDelay = 0,
-                stiffness = STIFFNESS_LAUNCHER_SCRIM,
-                damping = DAMPING_LAUNCHER_SCRIM,
-                startValue = 1f,
-                endValue = LAUNCHER_SCALE,
-                minVisibleChange = MIN_VISIBLE_CHANGE_SCALE,
-                property = SCALE_PROPERTY,
-                view = hotseat,
             )
             animatorSet.addListener(FolderScrimAnimationListener(scrimView, isOpening))
         }

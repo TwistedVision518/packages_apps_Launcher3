@@ -52,6 +52,7 @@ import com.android.launcher3.LauncherPrefChangeListener;
 import com.android.launcher3.model.data.ItemInfo;
 import com.android.launcher3.qsb.DockSearchWidgetHelper;
 import com.android.launcher3.statemanager.StateManager.StateListener;
+import com.android.launcher3.util.BlurBackgroundHelper;
 import com.android.launcher3.util.HorizontalInsettableView;
 import com.android.launcher3.util.LauncherBindableItemsContainer.ItemOperator;
 import com.android.launcher3.util.MultiPropertyFactory;
@@ -479,8 +480,17 @@ public class Hotseat extends CellLayout implements Insettable {
     public void setAlpha(float alpha) {
         float oldAlpha = getAlpha();
         super.setAlpha(alpha);
-        if (mShowHotseatBg && (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f))) {
-            invalidate();
+        if (mShowHotseatBg) {
+            if (alpha <= 0.01f && oldAlpha > 0.01f) {
+                // Hotseat is fading out — explicitly hide the blur drawable so SurfaceFlinger
+                // does not retain the blur region while the view is invisible to HWUI.
+                if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
+                    mBackgroundBlurDrawable.setVisible(false, false);
+                }
+            }
+            if (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f)) {
+                invalidate();
+            }
         }
     }
 
@@ -529,7 +539,6 @@ public class Hotseat extends CellLayout implements Insettable {
     @Override
     protected boolean verifyDrawable(Drawable who) {
         return super.verifyDrawable(who)
-                || (who == mBackgroundBlurDrawable)
                 || (who == mBackgroundTintDrawable);
     }
 
@@ -548,12 +557,9 @@ public class Hotseat extends CellLayout implements Insettable {
         }
 
         float iconAlpha = mShortcutsAndWidgets != null ? mShortcutsAndWidgets.getAlpha() : 1f;
-        if (iconAlpha <= 0.001f) {
-            if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
-                mBackgroundBlurDrawable.setVisible(false, false);
-            }
-            return;
-        }
+        // Do NOT hide the blur drawable based on icon alpha — icons can be animated to 0 during
+        // folder open/close spring animations. The blur capsule background must remain visible
+        // independently of icon alpha to avoid flickering. We only hide below when canBlur=false.
 
         DeviceProfile dp = mActivity.getDeviceProfile();
         int iconSize = dp.getWorkspaceIconProfile().getIconSizePx();
@@ -620,10 +626,6 @@ public class Hotseat extends CellLayout implements Insettable {
         if (canBlur) {
             if (mBackgroundBlurDrawable == null && getViewRootImpl() != null) {
                 mBackgroundBlurDrawable = getViewRootImpl().createBackgroundBlurDrawable();
-                if (mBackgroundBlurDrawable != null) {
-                    mBackgroundBlurDrawable.setCallback(this);
-                    mBackgroundBlurDrawable.setApplyRenderNodeAlpha(true);
-                }
             }
             if (mBackgroundBlurDrawable != null) {
                 if (!mLastBlurBounds.equals(mPillRect)) {
@@ -641,7 +643,9 @@ public class Hotseat extends CellLayout implements Insettable {
                 if (!mBackgroundBlurDrawable.isVisible()) {
                     mBackgroundBlurDrawable.setVisible(true, false);
                 }
-                mBackgroundBlurDrawable.draw(canvas);
+                if (!isDrawingBlurSnapshot()) {
+                    mBackgroundBlurDrawable.draw(canvas);
+                }
             }
         } else {
             if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
@@ -681,6 +685,22 @@ public class Hotseat extends CellLayout implements Insettable {
         int y = vStartPadding + (cellY * borderSpaceY) + (cellY * cellHeight);
 
         resultRect.set(x, y, x + cellWidth, y + cellHeight);
+    }
+
+    private boolean isDrawingBlurSnapshot() {
+        try {
+            if (mActivity != null && mActivity.getActivityComponent() != null) {
+                BlurBackgroundHelper helper = mActivity.getActivityComponent().getBlurBackgroundHelper();
+                return helper != null && helper.isDrawingBlurSnapshot();
+            }
+            ActivityContext act = ActivityContext.lookupContextNoThrow(getContext());
+            if (act != null && act.getActivityComponent() != null) {
+                BlurBackgroundHelper helper = act.getActivityComponent().getBlurBackgroundHelper();
+                return helper != null && helper.isDrawingBlurSnapshot();
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     /**

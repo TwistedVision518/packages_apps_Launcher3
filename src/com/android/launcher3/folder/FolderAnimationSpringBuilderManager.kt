@@ -60,15 +60,11 @@ class FolderAnimationSpringBuilderManager(
     // So we only apply Launcher effects when we have a Launcher.
     // We need to reset these values before calculating folder positioning.
     private fun resetLauncherScale(workspace: Workspace<*>?, hotseat: Hotseat?) {
-        if (hotseat == null || workspace == null) return
-        // Used to match the translation of the scaling between hotseat and workspace.
-        workspace.setPivotToScaleWithSelf(hotseat)
-        // Since we scale down workspace/hotseat when opening folder,
-        // need to have initial values to find starting folder icon location
+        if (workspace == null) return
         workspace.scaleX = 1f
         workspace.scaleY = 1f
-        hotseat.scaleX = 1f
-        hotseat.scaleY = 1f
+        hotseat?.scaleX = 1f
+        hotseat?.scaleY = 1f
     }
 
     companion object {

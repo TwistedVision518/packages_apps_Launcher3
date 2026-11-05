@@ -95,15 +95,18 @@ constructor(
             folderIcon.setIconVisible(false)
             openFolders.forEach { (openFolder, _) -> openFolder.visibility = View.INVISIBLE }
 
+            isDrawingBlurSnapshot = true
             val canvas =
                 workspaceBlurRenderNode.beginRecording(dragLayer.width, dragLayer.height)
             try {
                 dragLayer.draw(canvas)
             } finally {
                 workspaceBlurRenderNode.endRecording()
+                isDrawingBlurSnapshot = false
             }
             workspaceBlurRenderNode.setPosition(0, 0, dragLayer.width, dragLayer.height)
         } finally {
+            isDrawingBlurSnapshot = false
             openFolders.forEach { (openFolder, visibility) ->
                 openFolder.visibility = visibility
                 openFolder.invalidate()
@@ -205,11 +208,13 @@ constructor(
         // Like folders, blur launcher content as well as the wallpaper behind the window.
         // Each sheet owns its snapshot so the icon picker can sit above the app info sheet.
         val backdrop = RenderNode("bottomSheetBlur")
+        isDrawingBlurSnapshot = true
         val recordingCanvas = backdrop.beginRecording(dragLayer.width, dragLayer.height)
         try {
             dragLayer.draw(recordingCanvas)
         } finally {
             backdrop.endRecording()
+            isDrawingBlurSnapshot = false
         }
         backdrop.setPosition(0, 0, dragLayer.width, dragLayer.height)
         backdrop.setRenderEffect(

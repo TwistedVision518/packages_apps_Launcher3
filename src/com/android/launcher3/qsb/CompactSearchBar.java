@@ -28,8 +28,10 @@ import com.android.launcher3.R;
 import com.android.launcher3.Reorderable;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.graphics.ThemeManager;
+import com.android.launcher3.util.BlurBackgroundHelper;
 import com.android.launcher3.util.MultiTranslateDelegate;
 import com.android.launcher3.util.Themes;
+import com.android.launcher3.views.ActivityContext;
 
 import java.util.function.Consumer;
 
@@ -171,8 +173,18 @@ public class CompactSearchBar extends FrameLayout
     public void setAlpha(float alpha) {
         float oldAlpha = getAlpha();
         super.setAlpha(alpha);
-        if (mBlurEnabled && (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f))) {
-            invalidate();
+        if (mBlurEnabled) {
+            if (alpha <= 0.01f && oldAlpha > 0.01f) {
+                // CompactSearchBar is fading out — explicitly hide the blur drawable so
+                // SurfaceFlinger does not retain the blur region while the view is invisible.
+                if (mBackgroundBlurDrawable != null && mBackgroundBlurDrawable.isVisible()) {
+                    mBackgroundBlurDrawable.setVisible(false, false);
+                    mLastBlurBounds.setEmpty();
+                }
+            }
+            if (alpha >= 0.99f || alpha <= 0.01f || (oldAlpha <= 0.01f && alpha > 0.01f)) {
+                invalidate();
+            }
         }
     }
 
@@ -203,7 +215,7 @@ public class CompactSearchBar extends FrameLayout
 
     @Override
     protected boolean verifyDrawable(Drawable who) {
-        return super.verifyDrawable(who) || (who == mBackgroundBlurDrawable);
+        return super.verifyDrawable(who);
     }
 
     @Override
@@ -236,10 +248,6 @@ public class CompactSearchBar extends FrameLayout
 
         if (mBackgroundBlurDrawable == null && getViewRootImpl() != null) {
             mBackgroundBlurDrawable = getViewRootImpl().createBackgroundBlurDrawable();
-            if (mBackgroundBlurDrawable != null) {
-                mBackgroundBlurDrawable.setCallback(this);
-                mBackgroundBlurDrawable.setApplyRenderNodeAlpha(true);
-            }
         }
 
         if (mBackgroundBlurDrawable != null) {
@@ -258,8 +266,22 @@ public class CompactSearchBar extends FrameLayout
             if (!mBackgroundBlurDrawable.isVisible()) {
                 mBackgroundBlurDrawable.setVisible(true, false);
             }
-            mBackgroundBlurDrawable.draw(canvas);
+            if (!isDrawingBlurSnapshot()) {
+                mBackgroundBlurDrawable.draw(canvas);
+            }
         }
+    }
+
+    private boolean isDrawingBlurSnapshot() {
+        try {
+            ActivityContext act = ActivityContext.lookupContextNoThrow(mContext);
+            if (act != null && act.getActivityComponent() != null) {
+                BlurBackgroundHelper helper = act.getActivityComponent().getBlurBackgroundHelper();
+                return helper != null && helper.isDrawingBlurSnapshot();
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private void setIcon() {
