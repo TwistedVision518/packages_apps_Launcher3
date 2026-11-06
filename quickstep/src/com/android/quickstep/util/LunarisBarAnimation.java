@@ -60,9 +60,9 @@ public final class LunarisBarAnimation {
     }
 
     public static float getWindowAlpha(float progress) {
-        if (progress <= 0.65f) return 1f;
-        if (progress >= 0.98f) return 0f;
-        float p = (progress - 0.65f) / 0.33f;
+        if (progress <= 0.84f) return 1f;
+        if (progress >= 0.99f) return 0f;
+        float p = (progress - 0.84f) / 0.15f;
         // Fluid quadratic ease-out dissolve into island capsule
         return (1f - p) * (1f - p);
     }

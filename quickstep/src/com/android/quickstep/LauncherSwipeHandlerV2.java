@@ -138,7 +138,12 @@ public class LauncherSwipeHandlerV2 extends AbsSwipeUpHandler<
 
                 @Override
                 public boolean isWidget() {
-                    return true;
+                    return false;
+                }
+
+                @Override
+                public float getEndRadius(RectF cropRectF) {
+                    return islandTarget.height() / 2f;
                 }
 
                 @Override

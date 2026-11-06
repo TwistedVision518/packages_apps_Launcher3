@@ -2212,7 +2212,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                     closingWindowStartRect, closingWindowOriginalRect, startWindowCornerRadius) {
                 @Override
                 protected boolean isWidget() {
-                    return true;
+                    return false;
                 }
 
                 @Override
