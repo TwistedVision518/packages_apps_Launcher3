@@ -25,6 +25,7 @@ public class UniversalSearchResult {
     public static final int SOURCE_HISTORY = 13;
     public static final int SOURCE_PHOTO = 14;
     public static final int SOURCE_SCREENSHOT = 15;
+    public static final int SOURCE_RECENT_DOWNLOADS = 16;
 
     public final int source;
     public final String id;

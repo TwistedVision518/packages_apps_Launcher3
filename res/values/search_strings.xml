@@ -136,4 +136,7 @@
     <string name="search_quick_tool_flashlight_desc">Toggle device torch</string>
     <string name="search_quick_tool_sound_search">Sound Search</string>
     <string name="search_quick_tool_sound_search_desc">Identify music playing nearby</string>
+    <string name="search_section_recent_downloads">Recent downloads</string>
+    <string name="search_recent_downloads_title">Recent downloads</string>
+    <string name="search_recent_downloads_summary">Show recently downloaded files before typing</string>
 </resources>

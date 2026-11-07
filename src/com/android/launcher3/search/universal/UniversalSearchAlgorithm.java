@@ -192,6 +192,15 @@ public class UniversalSearchAlgorithm implements SearchAlgorithm<AdapterItem> {
                 items.add(AdapterItem.asSearchThumbnails(shots));
             }
         }
+        if (LauncherPrefs.SEARCH_RECENT_DOWNLOADS.get(mContext)) {
+            List<UniversalSearchResult> downloads = MediaProvider.recentDownloads(mContext, 3);
+            if (!downloads.isEmpty()) {
+                items.add(AdapterItem.asSearchSection(UniversalSearchResult.SOURCE_RECENT_DOWNLOADS));
+                for (UniversalSearchResult file : downloads) {
+                    items.add(AdapterItem.asSearchResult(file));
+                }
+            }
+        }
         if (LauncherPrefs.SEARCH_PHOTOS.get(mContext) && MediaProvider.hasImagePermission(mContext)) {
             PhotoIndex.indexSoon(mContext);
         }
