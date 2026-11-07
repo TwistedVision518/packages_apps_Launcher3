@@ -219,7 +219,7 @@ public class RectFSpringAnim extends ReleaseCheck {
     }
 
     public void onTargetPositionChanged() {
-        if (isEnded() || (mCos && mCosFadeProgress >= 1f)) {
+        if (isEnded()) {
             return;
         }
 
@@ -483,8 +483,6 @@ public class RectFSpringAnim extends ReleaseCheck {
             mAnimsStarted = false;
             if (mCos) {
                 mCurrentScaleProgress = 1f;
-                mCurrentCenterX = mTargetRect.centerX();
-                mCurrentY = getTrackedYFromRect(mTargetRect);
                 mCosFadeProgress = 1f;
                 dispatchUpdate();
             }

@@ -77,23 +77,22 @@ public final class CosWorkspaceRevealAnim {
         Matrix matrix = new Matrix();
         content.addOnFrameCallback(() -> {
             if (original == null || sibling == null || !sibling.isRunning()) return;
-            if (sibling.isCos() && (sibling.getCosFadeProgress() >= 0.86f || workspace.getScaleX() >= 0.985f)) {
-                if (!target.equals(original)) {
-                    target.set(original);
-                    sibling.onTargetPositionChanged();
-                }
-                return;
-            }
+            float scaleX = workspace.getScaleX();
+            float scaleY = workspace.getScaleY();
+            if (scaleX <= 0f || scaleY <= 0f) return;
+
             transformed.set(original);
             // Workspace and hotseat share a pivot, so dock icons follow this transform too.
-            matrix.setScale(workspace.getScaleX(), workspace.getScaleY(),
-                    workspace.getPivotX(), workspace.getPivotY());
+            // Scale around workspace pivot to match visual position on the scaling workspace.
+            matrix.setScale(scaleX, scaleY, workspace.getPivotX(), workspace.getPivotY());
             matrix.mapRect(transformed);
-            transformed.inset((transformed.width() - original.width()) / 2f,
-                    (transformed.height() - original.height()) / 2f);
+            // Scale back up around the center to keep floating icon dimensions identical to original.
+            matrix.setScale(1f / scaleX, 1f / scaleY, transformed.centerX(), transformed.centerY());
+            matrix.mapRect(transformed);
+
             float dx = Math.abs(transformed.centerX() - target.centerX());
             float dy = Math.abs(transformed.centerY() - target.centerY());
-            if (dx >= 1.0f || dy >= 1.0f) {
+            if (dx >= 0.5f || dy >= 0.5f) {
                 target.set(transformed);
                 sibling.onTargetPositionChanged();
             }
