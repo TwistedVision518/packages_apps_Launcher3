@@ -29,7 +29,9 @@ import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.PaintDrawable;
@@ -103,6 +105,10 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     private boolean mIsUniversalSearch;
     private Drawable mSearchIcon;
     private Drawable mClearIcon;
+    private Drawable mSpacerIcon;
+    private final Paint mFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF mBorderRect = new RectF();
 
     private final TextWatcher mTextWatcher = new TextWatcher() {
         @Override
@@ -256,13 +262,17 @@ public class AppsSearchContainerLayout extends ExtendedEditText
                 mClearIcon.setTint(Themes.getAttrColor(getContext(), android.R.attr.textColorSecondary));
             }
         }
+        if (mSpacerIcon == null) {
+            mSpacerIcon = getContext().getDrawable(R.drawable.ic_search_spacer);
+        }
         if (mSearchIcon == null) {
             mSearchIcon = getContext().getDrawable(R.drawable.ic_allapps_search_color);
         }
         boolean hasText = !TextUtils.isEmpty(getText());
-        Drawable rightDrawable = hasText ? mClearIcon : null;
+        Drawable rightDrawable = hasText ? mClearIcon : mSpacerIcon;
         setCompoundDrawablesRelativeWithIntrinsicBounds(mSearchIcon, null, rightDrawable, null);
         setGravity(hasText ? (Gravity.START | Gravity.CENTER_VERTICAL) : Gravity.CENTER);
+        setCursorVisible(hasText);
     }
 
     private void updateSearchBarStyle() {
@@ -304,6 +314,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
             setTextColor(Themes.getAttrColor(getContext(), android.R.attr.textColorSecondary));
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             setGravity(Gravity.CENTER_VERTICAL);
+            setCursorVisible(true);
             setPaddingRelative(Utilities.dpToPx(3), getPaddingTop(), 0, getPaddingBottom());
 
             hideBlur();
@@ -377,9 +388,10 @@ public class AppsSearchContainerLayout extends ExtendedEditText
                     Drawable leftDrawable = getCompoundDrawablesRelative()[0];
 
                     if (isUniversalSearch()) {
-                        if (rightDrawable != null) {
-                            int touchTarget = Math.max(rightDrawable.getIntrinsicWidth(), Utilities.dpToPx(48));
-                            if (touchX >= (getWidth() - getPaddingEnd() - touchTarget)) {
+                        boolean hasText = !TextUtils.isEmpty(getText());
+                        if (hasText) {
+                            int touchTarget = Math.max(Utilities.dpToPx(48), getPaddingEnd() + Utilities.dpToPx(48));
+                            if (touchX >= (getWidth() - touchTarget)) {
                                 setText("");
                                 return true;
                             }
@@ -449,32 +461,37 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     private void drawUniversalSearchBackground(Canvas canvas) {
         float cornerRadius = getHeight() / 2f;
-        int left = 0;
-        int top = 0;
-        int right = getWidth();
-        int bottom = getHeight();
 
         if (canvas.isHardwareAccelerated()) {
             updateBlurState();
             if (mBackdropBlur.isEnabled()) {
-                mBackdropBlur.draw(canvas, left, top, right, bottom, cornerRadius);
+                mBackdropBlur.draw(canvas, 0, 0, getWidth(), getHeight(), cornerRadius);
             }
         }
 
-        int opacity = Utilities.boundToRange(LauncherPrefs.HOTSEAT_QSB_OPACITY.get(getContext()), 0, 100);
-        int alphaValue = Math.round(255f * opacity / 100f * (mBackdropBlur.isEnabled() ? 0.35f : 0.85f));
-        int baseColor = LauncherPrefs.DOCK_THEME.get(getContext())
-                ? Themes.getAttrColor(getContext(), R.attr.qsbFillColorThemed)
-                : Themes.getAttrColor(getContext(), R.attr.qsbFillColor);
-        int color = Color.argb(alphaValue, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor));
+        // Frosted translucent capsule fill
+        boolean isDarkMain = Themes.getAttrBoolean(getContext(), R.attr.isMainColorDark);
+        int fillColor = isDarkMain
+                ? Color.argb(190, 245, 245, 248)
+                : Color.argb(170, 18, 18, 24);
 
-        mBackgroundTintDrawable.setShape(GradientDrawable.RECTANGLE);
-        mBackgroundTintDrawable.setCornerRadius(cornerRadius);
-        mBackgroundTintDrawable.setColor(color);
-        mBackgroundTintDrawable.setStroke(Math.max(1, Utilities.dpToPx(1f)),
-                Color.argb(35, 255, 255, 255));
-        mBackgroundTintDrawable.setBounds(left, top, right, bottom);
-        mBackgroundTintDrawable.draw(canvas);
+        float strokeWidth = Math.max(2f, Utilities.dpToPx(1.5f));
+        int strokeColor = isDarkMain
+                ? Color.argb(90, 0, 0, 0)
+                : Color.argb(140, 255, 255, 255);
+
+        mFillPaint.setStyle(Paint.Style.FILL);
+        mFillPaint.setColor(fillColor);
+        canvas.drawRoundRect(0, 0, getWidth(), getHeight(), cornerRadius, cornerRadius, mFillPaint);
+
+        float halfStroke = strokeWidth / 2f;
+        mBorderRect.set(halfStroke, halfStroke, getWidth() - halfStroke, getHeight() - halfStroke);
+        float innerRadius = Math.max(0, cornerRadius - halfStroke);
+
+        mBorderPaint.setStyle(Paint.Style.STROKE);
+        mBorderPaint.setStrokeWidth(strokeWidth);
+        mBorderPaint.setColor(strokeColor);
+        canvas.drawRoundRect(mBorderRect, innerRadius, innerRadius, mBorderPaint);
     }
 
     private void setUpBackground(boolean showQSBStyle) {
