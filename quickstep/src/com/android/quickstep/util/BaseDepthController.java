@@ -355,6 +355,7 @@ public class BaseDepthController {
         float zoomDelta = Math.abs(mLastWallpaperZoom - zoom);
         float threshold = 0.015f;
         if (force || windowToken != mWallpaperWindowToken
+                || (!mCosWallpaperMotion && !Float.isNaN(mAppWallpaperDepth) && mLastWallpaperZoom != zoom)
                 || zoomDelta >= threshold
                 || (zoom == 0f && mLastWallpaperZoom != 0f)
                 || (zoom == 1f && mLastWallpaperZoom != 1f)) {

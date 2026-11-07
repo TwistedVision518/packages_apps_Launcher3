@@ -148,7 +148,7 @@ public class LauncherSwipeHandlerV2 extends AbsSwipeUpHandler<
 
                 @Override
                 public boolean shouldUseCosCloseAnimation() {
-                    return true;
+                    return CosAppAnimation.isEnabled(mContainer);
                 }
 
                 @Override
@@ -255,7 +255,8 @@ public class LauncherSwipeHandlerV2 extends AbsSwipeUpHandler<
 
             @Override
             public boolean shouldUseCosCloseAnimation() {
-                return isAnimatingIntoIcon() && !isTargetTranslucent
+                return CosAppAnimation.isEnabled(mContainer)
+                        && isAnimatingIntoIcon() && !isTargetTranslucent
                         && targetTaskView == null && !mIsSwipeForSplit && !mIsSwipingPipToHome
                         && mRemoteTargetHandles.length == 1;
             }

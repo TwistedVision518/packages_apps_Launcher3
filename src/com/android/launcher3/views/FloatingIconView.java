@@ -723,7 +723,9 @@ public class FloatingIconView extends FrameLayout implements
 
         // We need to add it to the overlay, but keep it invisible until animation starts..
         view.setVisibility(View.INVISIBLE);
-        view.setAlpha(isOpening ? 1f : 0f);
+        if (com.android.quickstep.cos.CosAppAnimation.isEnabled(launcher)) {
+            view.setAlpha(isOpening ? 1f : 0f);
+        }
 
         parent.addView(view);
         dragLayer.addView(view.mListenerView);
