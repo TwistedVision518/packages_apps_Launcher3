@@ -26,19 +26,32 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
-import android.graphics.drawable.Drawable;
-import android.graphics.drawable.PaintDrawable;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.PaintDrawable;
 import android.net.Uri;
+import android.text.Editable;
 import android.text.Selection;
 import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.text.method.TextKeyListener;
 import android.util.AttributeSet;
+import android.util.TypedValue;
+import android.view.CrossWindowBlurListeners;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnTouchListener;
 import android.view.ViewGroup.MarginLayoutParams;
+import android.view.ViewOutlineProvider;
+
+import com.android.axion.blur.ui.view.AxViewBackdropBlur;
 
 import com.android.launcher3.DeviceProfile;
 import com.android.launcher3.ExtendedEditText;
@@ -60,6 +73,7 @@ import com.android.launcher3.graphics.ThemeManager;
 import com.android.launcher3.views.ActivityContext;
 
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 /**
  * Layout to contain the All-apps search UI.
@@ -78,6 +92,32 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     // The amount of pixels to shift down and overlap with the rest of the content.
     private final int mContentOverlap;
+
+    private final AxViewBackdropBlur mBackdropBlur = new AxViewBackdropBlur(this, false);
+    private final GradientDrawable mBackgroundTintDrawable = new GradientDrawable();
+    private boolean mCrossWindowBlurEnabled;
+    private int mBlurDepth = 45;
+    private final Consumer<Boolean> mCrossWindowBlurListener =
+            this::onCrossWindowBlurEnabledChanged;
+
+    private boolean mIsUniversalSearch;
+    private Drawable mSearchIcon;
+    private Drawable mClearIcon;
+
+    private final TextWatcher mTextWatcher = new TextWatcher() {
+        @Override
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+        @Override
+        public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+        @Override
+        public void afterTextChanged(Editable s) {
+            if (isUniversalSearch()) {
+                updateUniversalSearchDrawablesAndGravity();
+            }
+        }
+    };
 
     public AppsSearchContainerLayout(Context context) {
         this(context, null);
@@ -98,11 +138,30 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
         mContentOverlap =
                 getResources().getDimensionPixelSize(R.dimen.all_apps_search_bar_content_overlap);
+
+        addTextChangedListener(mTextWatcher);
+        setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                if (isUniversalSearch()) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), view.getHeight() / 2f);
+                } else {
+                    float cornerRadius = getCornerRadius(getContext());
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), cornerRadius);
+                }
+            }
+        });
+        setClipToOutline(true);
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        mBackdropBlur.onAttachedToWindow();
+        mCrossWindowBlurEnabled = CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
+        CrossWindowBlurListeners.getInstance().addListener(
+                getContext().getMainExecutor(), mCrossWindowBlurListener);
+        updateBlurPreferences();
         if (mAppsView != null) {
             mAppsView.getAppsStore().addUpdateListener(this);
             mSearchBarController.refreshSearchResult();
@@ -111,10 +170,144 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     @Override
     protected void onDetachedFromWindow() {
+        mBackdropBlur.onDetachedFromWindow();
+        CrossWindowBlurListeners.getInstance().removeListener(mCrossWindowBlurListener);
         super.onDetachedFromWindow();
         if (mAppsView != null) {
             mAppsView.getAppsStore().removeUpdateListener(this);
             mSearchBarController.cancelSearch();
+        }
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        mBackdropBlur.onVisibilityAggregated(isVisible);
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            updateBlurPreferences();
+            postInvalidate();
+        } else {
+            hideBlur();
+        }
+    }
+
+    @Override
+    protected boolean verifyDrawable(Drawable who) {
+        return super.verifyDrawable(who)
+                || (mBackdropBlur != null && mBackdropBlur.verifyDrawable(who));
+    }
+
+    private void onCrossWindowBlurEnabledChanged(boolean enabled) {
+        mCrossWindowBlurEnabled = enabled;
+        updateBlurState();
+        postInvalidate();
+    }
+
+    private void updateBlurPreferences() {
+        mBlurDepth = Math.max(0, LauncherPrefs.BLUR_DEPTH.get(getContext()));
+        mBackdropBlur.setBlurRadiusPx(mBlurDepth);
+        updateBlurState();
+    }
+
+    private boolean isBlurAvailable() {
+        return mCrossWindowBlurEnabled && mBlurDepth > 0 && isHardwareAccelerated();
+    }
+
+    private boolean canDrawBlur() {
+        return isBlurAvailable() && isAttachedToWindow()
+                && getWidth() > 0 && getHeight() > 0
+                && getWindowVisibility() == VISIBLE;
+    }
+
+    private void updateBlurState() {
+        mBackdropBlur.setEnabled(canDrawBlur() && isUniversalSearch());
+        mBackdropBlur.setSurfaceAlpha(Math.round(255f
+                * Utilities.boundToRange(getAlpha(), 0f, 1f)));
+    }
+
+    private void hideBlur() {
+        mBackdropBlur.setEnabled(false);
+    }
+
+    public void setUniversalSearch(boolean active) {
+        if (mIsUniversalSearch == active) {
+            return;
+        }
+        mIsUniversalSearch = active;
+        updateSearchBarStyle();
+        requestLayout();
+        invalidate();
+    }
+
+    public boolean isUniversalSearch() {
+        return mIsUniversalSearch || (mAppsView != null && mAppsView.isUniversalSearchActive());
+    }
+
+    private void updateUniversalSearchDrawablesAndGravity() {
+        if (mClearIcon == null) {
+            mClearIcon = getContext().getDrawable(R.drawable.ic_allapps_clear);
+            if (mClearIcon != null) {
+                mClearIcon = mClearIcon.mutate();
+                mClearIcon.setTint(Themes.getAttrColor(getContext(), android.R.attr.textColorSecondary));
+            }
+        }
+        if (mSearchIcon == null) {
+            mSearchIcon = getContext().getDrawable(R.drawable.ic_allapps_search_color);
+        }
+        boolean hasText = !TextUtils.isEmpty(getText());
+        Drawable rightDrawable = hasText ? mClearIcon : null;
+        setCompoundDrawablesRelativeWithIntrinsicBounds(mSearchIcon, null, rightDrawable, null);
+        setGravity(hasText ? (Gravity.START | Gravity.CENTER_VERTICAL) : Gravity.CENTER);
+    }
+
+    private void updateSearchBarStyle() {
+        if (isUniversalSearch()) {
+            updateUniversalSearchDrawablesAndGravity();
+            setHint(R.string.label_search);
+            setHintTextColor(Themes.getAttrColor(getContext(), android.R.attr.textColorSecondary));
+            setTextColor(Themes.getAttrColor(getContext(), android.R.attr.textColorPrimary));
+            setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                    getResources().getDimension(R.dimen.compact_search_bar_text_size));
+            setPaddingRelative(Utilities.dpToPx(12), getPaddingTop(), Utilities.dpToPx(12), getPaddingBottom());
+            setBackground(null);
+            updateBlurPreferences();
+        } else {
+            boolean isCompact = LauncherPrefs.COMPACT_SEARCH_BAR.get(getContext());
+            boolean isDockSearch = LauncherPrefs.DOCK_SEARCH.get(getContext());
+            boolean hasGoogleApp = Utilities.isGSAEnabled(getContext());
+            boolean showQSB = Utilities.showQSB(getContext()) || (isCompact && isDockSearch && hasGoogleApp);
+            boolean isDockThemed = ThemeManager.INSTANCE.get(getContext()).isMonoThemeEnabled();
+
+            Drawable gIcon = getContext().getDrawable(R.drawable.ic_allapps_g_color);
+            Drawable gIconThemed = getContext().getDrawable(R.drawable.ic_allapps_g_themed);
+            Drawable sIcon = getContext().getDrawable(R.drawable.ic_allapps_search_color);
+            Drawable actions = getContext().getDrawable(R.drawable.ic_allapps_actions_color);
+            Drawable actionsThemed = getContext().getDrawable(R.drawable.ic_allapps_actions_themed);
+
+            if (showQSB) {
+                if (!isDockThemed) {
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(gIcon, null, actions, null);
+                } else {
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(gIconThemed, null, actionsThemed, null);
+                }
+            } else {
+                setCompoundDrawablesRelativeWithIntrinsicBounds(sIcon, null, null, null);
+            }
+
+            setHint(null);
+            setHintTextColor(getContext().getColorStateList(R.drawable.all_apps_search_hint));
+            setTextColor(Themes.getAttrColor(getContext(), android.R.attr.textColorSecondary));
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setPaddingRelative(Utilities.dpToPx(3), getPaddingTop(), 0, getPaddingBottom());
+
+            hideBlur();
+            setUpBackground(showQSB);
         }
     }
 
@@ -157,12 +350,6 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
 
-        Drawable gIcon = getContext().getDrawable(R.drawable.ic_allapps_g_color);
-        Drawable gIconThemed = getContext().getDrawable(R.drawable.ic_allapps_g_themed);
-        Drawable sIcon = getContext().getDrawable(R.drawable.ic_allapps_search_color);
-        Drawable actions = getContext().getDrawable(R.drawable.ic_allapps_actions_color);
-        Drawable actionsThemed = getContext().getDrawable(R.drawable.ic_allapps_actions_themed);
-
         // Shift the widget horizontally so that its centered in the parent (b/63428078)
         View parent = (View) getParent();
         if (parent != null) {
@@ -173,21 +360,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
             setTranslationX(shift);
         }
 
-        boolean isCompact = LauncherPrefs.COMPACT_SEARCH_BAR.get(getContext());
-        boolean isDockSearch = LauncherPrefs.DOCK_SEARCH.get(getContext());
-        boolean hasGoogleApp = Utilities.isGSAEnabled(getContext());
-        boolean showQSB = Utilities.showQSB(getContext()) || (isCompact && isDockSearch && hasGoogleApp);
-        boolean isDockThemed = ThemeManager.INSTANCE.get(getContext()).isMonoThemeEnabled();
-
-        if (showQSB) {
-            if (!isDockThemed) {
-                setCompoundDrawablesRelativeWithIntrinsicBounds(gIcon, null, actions, null);
-            } else {
-                setCompoundDrawablesRelativeWithIntrinsicBounds(gIconThemed, null, actionsThemed, null);
-            }
-        } else {
-            setCompoundDrawablesRelativeWithIntrinsicBounds(sIcon, null, null, null);
-        }
+        updateSearchBarStyle();
 
         int leftSlotWidth = getResources().getDimensionPixelSize(R.dimen.qsb_icon_tap_size);
         int actionSlotWidth = getResources().getDimensionPixelSize(R.dimen.qsb_icon_tap_size);
@@ -202,6 +375,22 @@ public class AppsSearchContainerLayout extends ExtendedEditText
                             ? getWidth() - event.getX() : event.getX();
                     Drawable rightDrawable = getCompoundDrawablesRelative()[2];
                     Drawable leftDrawable = getCompoundDrawablesRelative()[0];
+
+                    if (isUniversalSearch()) {
+                        if (rightDrawable != null) {
+                            int touchTarget = Math.max(rightDrawable.getIntrinsicWidth(), Utilities.dpToPx(48));
+                            if (touchX >= (getWidth() - getPaddingEnd() - touchTarget)) {
+                                setText("");
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+
+                    boolean isCompact = LauncherPrefs.COMPACT_SEARCH_BAR.get(getContext());
+                    boolean isDockSearch = LauncherPrefs.DOCK_SEARCH.get(getContext());
+                    boolean hasGoogleApp = Utilities.isGSAEnabled(getContext());
+                    boolean showQSB = Utilities.showQSB(getContext()) || (isCompact && isDockSearch && hasGoogleApp);
 
                     // Left slot (G icon when showQSB)
                     if (leftDrawable != null && touchX <= (getPaddingStart() + leftSlotWidth)) {
@@ -242,16 +431,50 @@ public class AppsSearchContainerLayout extends ExtendedEditText
                         }
                         return true;
                     }
-
-
                 }
                 return false;
             }
         });
 
         offsetTopAndBottom(mContentOverlap);
+    }
 
-        setUpBackground(showQSB);
+    @Override
+    protected void onDraw(Canvas canvas) {
+        if (isUniversalSearch()) {
+            drawUniversalSearchBackground(canvas);
+        }
+        super.onDraw(canvas);
+    }
+
+    private void drawUniversalSearchBackground(Canvas canvas) {
+        float cornerRadius = getHeight() / 2f;
+        int left = 0;
+        int top = 0;
+        int right = getWidth();
+        int bottom = getHeight();
+
+        if (canvas.isHardwareAccelerated()) {
+            updateBlurState();
+            if (mBackdropBlur.isEnabled()) {
+                mBackdropBlur.draw(canvas, left, top, right, bottom, cornerRadius);
+            }
+        }
+
+        int opacity = Utilities.boundToRange(LauncherPrefs.HOTSEAT_QSB_OPACITY.get(getContext()), 0, 100);
+        int alphaValue = Math.round(255f * opacity / 100f * (mBackdropBlur.isEnabled() ? 0.35f : 0.85f));
+        int baseColor = LauncherPrefs.DOCK_THEME.get(getContext())
+                ? Themes.getAttrColor(getContext(), R.attr.qsbFillColorThemed)
+                : Themes.getAttrColor(getContext(), R.attr.qsbFillColor);
+        int color = Color.argb(alphaValue, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor));
+
+        mBackgroundTintDrawable.setShape(GradientDrawable.RECTANGLE);
+        mBackgroundTintDrawable.setCornerRadius(cornerRadius);
+        mBackgroundTintDrawable.setColor(color);
+        mBackgroundTintDrawable.setStroke(Math.max(1, Utilities.dpToPx(1f)),
+                Color.argb(35, 255, 255, 255));
+        mBackgroundTintDrawable.setBounds(left, top, right, bottom);
+        mBackgroundTintDrawable.draw(canvas);
     }
 
     private void setUpBackground(boolean showQSBStyle) {
@@ -290,6 +513,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         if (isAttachedToWindow()) {
             mAppsView.getAppsStore().addUpdateListener(this);
         }
+        setUniversalSearch(appsView.isUniversalSearchActive());
     }
 
     @Override
