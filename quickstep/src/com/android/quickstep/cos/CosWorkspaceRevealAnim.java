@@ -26,6 +26,7 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.graphics.Matrix;
 import android.graphics.RectF;
+import android.view.CrossWindowBlurListeners;
 import android.view.View;
 
 import com.android.app.animation.Animations;
@@ -76,23 +77,34 @@ public final class CosWorkspaceRevealAnim {
         Matrix matrix = new Matrix();
         content.addOnFrameCallback(() -> {
             if (original == null || sibling == null || !sibling.isRunning()) return;
+            float scaleX = workspace.getScaleX();
+            float scaleY = workspace.getScaleY();
+            if (scaleX <= 0f || scaleY <= 0f) return;
+
             transformed.set(original);
             // Workspace and hotseat share a pivot, so dock icons follow this transform too.
-            matrix.setScale(workspace.getScaleX(), workspace.getScaleY(),
-                    workspace.getPivotX(), workspace.getPivotY());
+            // Scale around workspace pivot to match visual position on the scaling workspace.
+            matrix.setScale(scaleX, scaleY, workspace.getPivotX(), workspace.getPivotY());
             matrix.mapRect(transformed);
-            transformed.inset((transformed.width() - original.width()) / 2f,
-                    (transformed.height() - original.height()) / 2f);
-            if (!transformed.equals(target)) {
+            // Scale back up around the center to keep floating icon dimensions identical to original.
+            matrix.setScale(1f / scaleX, 1f / scaleY, transformed.centerX(), transformed.centerY());
+            matrix.mapRect(transformed);
+
+            float dx = Math.abs(transformed.centerX() - target.centerX());
+            float dy = Math.abs(transformed.centerY() - target.centerY());
+            if (dx >= 0.5f || dy >= 0.5f) {
                 target.set(transformed);
                 sibling.onTargetPositionChanged();
             }
         });
 
         DepthController depth = launcher.getDepthController();
-        boolean contentBlur = blur && LauncherPrefs.APP_LAUNCH_BLUR_ENABLED.get(launcher);
+        boolean crossWindowBlur = CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
+        boolean contentBlur = blur && crossWindowBlur
+                && LauncherPrefs.APP_LAUNCH_BLUR_ENABLED.get(launcher);
         int blurRadius = contentBlur ? launcher.getResources().getDimensionPixelSize(
                 R.dimen.max_depth_blur_radius_enhanced) : 0;
+        Animator wallpaperAnim = null;
         if (blur) {
             content.addFloat(depth.stateDepth, MULTI_PROPERTY_VALUE,
                     BACKGROUND_APP.getDepth(launcher), NORMAL.getDepth(launcher),
@@ -101,12 +113,12 @@ public final class CosWorkspaceRevealAnim {
                 ValueAnimator blurAnimator = ValueAnimator.ofFloat(blurRadius, 0f);
                 blurAnimator.setInterpolator(CosAppAnimation.REVEAL);
                 blurAnimator.addUpdateListener(value ->
-                        depth.setAppAnimationBlur((Float) value.getAnimatedValue()));
+                        depth.setAppAnimationBlur((float) value.getAnimatedValue()));
                 content.add(blurAnimator);
             }
-            mAnimators.play(depth.animateAppWallpaperDepth(BACKGROUND_APP.getDepth(launcher),
+            wallpaperAnim = depth.animateAppWallpaperDepth(BACKGROUND_APP.getDepth(launcher),
                     NORMAL.getDepth(launcher), CosAppAnimation.WALLPAPER_CLOSE_DURATION,
-                    CosAppAnimation.WALLPAPER_CLOSE)).after(prepare);
+                    CosAppAnimation.WALLPAPER_CLOSE);
         }
         content.addFloat(launcher.getDragLayer().getWorkspaceDragScrim(), SCRIM_PROGRESS,
                 BACKGROUND_APP.getWorkspaceBackgroundAlpha(launcher),
@@ -120,11 +132,18 @@ public final class CosWorkspaceRevealAnim {
         scrim.setInterpolator(CosAppAnimation.REVEAL);
         content.add(scrim);
         mAnimators.play(content.buildAnim()).after(prepare);
-        Runnable destroyCallback = mAnimators::cancel;
+        final Animator finalWallpaperAnim = wallpaperAnim;
+        Runnable destroyCallback = () -> {
+            mAnimators.cancel();
+            if (finalWallpaperAnim != null) finalWallpaperAnim.cancel();
+        };
         StateListener<LauncherState> stateListener = new StateListener<>() {
             @Override
             public void onStateTransitionStart(LauncherState state) {
-                if (state != NORMAL) mAnimators.cancel();
+                if (state != NORMAL) {
+                    mAnimators.cancel();
+                    if (finalWallpaperAnim != null) finalWallpaperAnim.cancel();
+                }
             }
         };
         prepare.addListener(new AnimatorListenerAdapter() {
@@ -132,6 +151,10 @@ public final class CosWorkspaceRevealAnim {
             public void onAnimationStart(Animator animation) {
                 InteractionBoost.requestForAnimation(workspace);
                 mPrepared = true;
+                WORKSPACE_SCALE_PROPERTY_FACTORY.get(SCALE_INDEX_WORKSPACE_STATE)
+                        .setValue(launcher.getWorkspace(), startScale);
+                HOTSEAT_SCALE_PROPERTY_FACTORY.get(SCALE_INDEX_WORKSPACE_STATE)
+                        .setValue(launcher.getHotseat(), startScale);
                 launcher.getStateManager().createAtomicAnimation(BACKGROUND_APP, NORMAL, setup)
                         .start();
                 launcher.<RecentsView>getOverviewPanel().forceFinishScroller();
@@ -141,6 +164,7 @@ public final class CosWorkspaceRevealAnim {
                 if (blur) {
                     depth.pauseBlursOnWindows(true);
                     depth.stateDepth.setValue(BACKGROUND_APP.getDepth(launcher));
+                    if (finalWallpaperAnim != null) finalWallpaperAnim.start();
                 }
                 if (contentBlur) depth.setAppAnimationBlur(blurRadius);
                 launcher.addEventCallback(EVENT_DESTROYED, destroyCallback);

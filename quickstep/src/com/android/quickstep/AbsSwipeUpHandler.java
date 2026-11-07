@@ -1224,8 +1224,7 @@ public abstract class AbsSwipeUpHandler<
 
         ThumbnailData snapshot = mTaskSnapshotCache.get(taskId);
         if (snapshot == null) {
-            snapshot = mRecentsAnimationController.screenshotTask(taskId);
-            if (snapshot != null) mTaskSnapshotCache.put(taskId, snapshot);
+            return false;
         }
         android.graphics.Bitmap bitmap = snapshot == null ? null : snapshot.getThumbnail();
         int rotation = mRemoteTargetHandles[0].getTaskViewSimulator().getOrientationState()

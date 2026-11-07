@@ -108,6 +108,7 @@ public class BaseDepthController {
     @Nullable private ValueAnimator mWallpaperZoomHandoffAnimator;
     private float mWallpaperZoomHandoffTarget;
     private float mAppAnimationBlur = -1f;
+    private int mLastAppliedAppBlurRadius = -1;
     private float mAppWallpaperDepth = Float.NaN;
     @Nullable private ValueAnimator mAppWallpaperAnimator;
     private final boolean mCosWallpaperMotion;
@@ -227,8 +228,13 @@ public class BaseDepthController {
     }
 
     public void setAppAnimationBlur(float radius) {
+        if (mAppAnimationBlur == radius) return;
         mAppAnimationBlur = radius;
-        if (radius < 0f && mLauncher != null) mLauncher.getWorkspace().setRenderEffect(null);
+        if (radius < 0f) {
+            mLastAppliedAppBlurRadius = -1;
+            if (mLauncher != null) mLauncher.getWorkspace().setRenderEffect(null);
+            return;
+        }
         blurWorkspaceDepthTargets();
     }
 
@@ -346,9 +352,11 @@ public class BaseDepthController {
             return;
         }
 
+        float zoomDelta = Math.abs(mLastWallpaperZoom - zoom);
+        float threshold = 0.015f;
         if (force || windowToken != mWallpaperWindowToken
-                || (!Float.isNaN(mAppWallpaperDepth) && mLastWallpaperZoom != zoom)
-                || Math.abs(mLastWallpaperZoom - zoom) >= 0.015f
+                || (!mCosWallpaperMotion && !Float.isNaN(mAppWallpaperDepth) && mLastWallpaperZoom != zoom)
+                || zoomDelta >= threshold
                 || (zoom == 0f && mLastWallpaperZoom != 0f)
                 || (zoom == 1f && mLastWallpaperZoom != 1f)) {
             mWallpaperManager.setWallpaperZoomOut(windowToken, zoom);
@@ -532,11 +540,25 @@ public class BaseDepthController {
     @VisibleForTesting
     public boolean blurWorkspaceDepthTargets() {
         if (mLauncher != null && mAppAnimationBlur >= 0f) {
-            RenderEffect effect = mCrossWindowBlursEnabled && mAppAnimationBlur > 0f
-                    ? RenderEffect.createBlurEffect(mAppAnimationBlur, mAppAnimationBlur,
-                            Shader.TileMode.CLAMP) : null;
-            mLauncher.getWorkspace().setRenderEffect(effect);
-            return effect != null;
+            if (!mCrossWindowBlursEnabled) {
+                if (mLastAppliedAppBlurRadius != 0) {
+                    mLastAppliedAppBlurRadius = 0;
+                    mLauncher.getWorkspace().setRenderEffect(null);
+                }
+                return false;
+            }
+            int roundedRadius = Math.round(mAppAnimationBlur);
+            if (Math.abs(roundedRadius - mLastAppliedAppBlurRadius) >= 4
+                    || (roundedRadius == 0 && mLastAppliedAppBlurRadius != 0)
+                    || mLastAppliedAppBlurRadius < 0) {
+                mLastAppliedAppBlurRadius = roundedRadius;
+                RenderEffect effect = roundedRadius > 0
+                        ? RenderEffect.createBlurEffect(roundedRadius, roundedRadius,
+                                Shader.TileMode.CLAMP) : null;
+                mLauncher.getWorkspace().setRenderEffect(effect);
+                return effect != null;
+            }
+            return mLastAppliedAppBlurRadius > 0;
         }
         if (mLauncher == null || !Flags.allAppsBlur()) {
             return false;

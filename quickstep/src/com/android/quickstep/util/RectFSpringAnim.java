@@ -24,7 +24,6 @@ import android.content.Context;
 import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.view.Choreographer;
 
 import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
@@ -150,12 +149,8 @@ public class RectFSpringAnim extends ReleaseCheck {
     private final boolean mUseIconSpringConfig;
     private final boolean mUseConfiguredSpring;
     private final boolean mCos;
-    private long mCosStartTime;
     private float mCosDurationScale;
     private float mCosFadeProgress;
-    private Choreographer mChoreographer;
-    private boolean mUpdatePending;
-    private final Runnable mFrameUpdate;
     private boolean mEnding;
     private boolean mWindowDetached;
 
@@ -175,7 +170,6 @@ public class RectFSpringAnim extends ReleaseCheck {
         mRectDamping = config.rectDamping;
         mUseIconSpringConfig = config instanceof IconSpringConfig;
         mCos = config instanceof CosSpringConfig;
-        mFrameUpdate = mCos ? this::dispatchFrameUpdate : null;
         mUseConfiguredSpring = mUseIconSpringConfig || mCos || config instanceof WidgetSpringConfig;
 
         mCurrentY = getTrackedYFromRect(mStartRect);
@@ -230,23 +224,31 @@ public class RectFSpringAnim extends ReleaseCheck {
         }
 
         if (mRectXSpring != null) {
-            mRectXSpring.animateToFinalPosition(mTargetRect.centerX());
-            mRectXAnimEnded = false;
+            float targetX = mTargetRect.centerX();
+            if (!mCos || Math.abs(mRectXSpring.getSpring().getFinalPosition() - targetX) >= 0.5f) {
+                mRectXSpring.animateToFinalPosition(targetX);
+                mRectXAnimEnded = false;
+            }
         }
 
         if (mRectYSpring != null) {
+            float targetY;
             switch (mTracking) {
                 case TRACKING_TOP:
-                    mRectYSpring.animateToFinalPosition(mTargetRect.top);
+                    targetY = mTargetRect.top;
                     break;
                 case TRACKING_BOTTOM:
-                    mRectYSpring.animateToFinalPosition(mTargetRect.bottom);
+                    targetY = mTargetRect.bottom;
                     break;
                 case TRACKING_CENTER:
-                    mRectYSpring.animateToFinalPosition(mTargetRect.centerY());
+                default:
+                    targetY = mTargetRect.centerY();
                     break;
             }
-            mRectYAnimEnded = false;
+            if (!mCos || Math.abs(mRectYSpring.getSpring().getFinalPosition() - targetY) >= 0.5f) {
+                mRectYSpring.animateToFinalPosition(targetY);
+                mRectYAnimEnded = false;
+            }
         }
     }
 
@@ -319,8 +321,6 @@ public class RectFSpringAnim extends ReleaseCheck {
         if (mCos) {
             if ((endX - startX) * xVelocityPxPerS < 0) xVelocityPxPerS *= 0.25f;
             if ((endY - startY) * yVelocityPxPerS < 0) yVelocityPxPerS *= 0.25f;
-            mChoreographer = Choreographer.getInstance();
-            mCosStartTime = 0;
             mCosFadeProgress = 0f;
             mCosDurationScale = ValueAnimator.getDurationScale();
         }
@@ -383,11 +383,6 @@ public class RectFSpringAnim extends ReleaseCheck {
 
     public void end() {
         mEnding = true;
-        if (mUpdatePending) {
-            mChoreographer.removeCallbacks(Choreographer.CALLBACK_INSETS_ANIMATION,
-                    mFrameUpdate, null);
-            mUpdatePending = false;
-        }
         if (mAnimsStarted) {
             if (mRectXSpring.canSkipToEnd()) {
                 mRectXSpring.skipToEnd();
@@ -428,33 +423,19 @@ public class RectFSpringAnim extends ReleaseCheck {
             return;
         }
 
-        if (mCos && !mEnding) {
-            if (!mUpdatePending) {
-                mUpdatePending = true;
-                mChoreographer.postCallback(Choreographer.CALLBACK_INSETS_ANIMATION,
-                        mFrameUpdate, null);
-            }
-        } else {
-            dispatchUpdate();
-        }
-    }
-
-    private void dispatchFrameUpdate() {
-        if (!mUpdatePending) return;
-        mUpdatePending = false;
         dispatchUpdate();
-        maybeOnEnd();
     }
 
     private void dispatchUpdate() {
         if (mCos) {
-            if (mCosDurationScale <= 0 || isEnded() || mEnding) {
+            if (mCosDurationScale <= 0 || isEnded() || mEnding || mCurrentScaleProgress >= 0.86f) {
                 mCosFadeProgress = 1f;
+            } else if (mCurrentScaleProgress <= 0.70f) {
+                mCosFadeProgress = 0f;
             } else {
-                long frameTime = mChoreographer.getFrameTime();
-                if (mCosStartTime == 0) mCosStartTime = frameTime;
-                mCosFadeProgress = CosAppAnimation.iconFade(
-                        (frameTime - mCosStartTime) / mCosDurationScale);
+                float t = (mCurrentScaleProgress - 0.70f) / 0.16f;
+                float fade = t * t * (3f - 2f * t);
+                mCosFadeProgress = Math.max(mCosFadeProgress, fade);
             }
         }
         if (!mOnUpdateListeners.isEmpty()) {
@@ -498,8 +479,13 @@ public class RectFSpringAnim extends ReleaseCheck {
     }
 
     private void maybeOnEnd() {
-        if (mAnimsStarted && isEnded() && !mUpdatePending) {
+        if (mAnimsStarted && isEnded()) {
             mAnimsStarted = false;
+            if (mCos) {
+                mCurrentScaleProgress = 1f;
+                mCosFadeProgress = 1f;
+                dispatchUpdate();
+            }
             setCanRelease(true);
             for (Animator.AnimatorListener animatorListener : mAnimatorListeners) {
                 animatorListener.onAnimationEnd(null);

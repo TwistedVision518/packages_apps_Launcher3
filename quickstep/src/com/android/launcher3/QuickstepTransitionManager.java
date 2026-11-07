@@ -348,27 +348,21 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
     private final Interpolator mOpeningInterpolator;
     private LaunchPreview mImmediatePreview;
 
-    /** Give icon taps their first frame without waiting for WM's opening app surface. */
+    /** Give icon taps immediate CPU boost without racing ahead of WM's opening app surface. */
     @Nullable
     public Runnable beginImmediateAppLaunch(View source, ItemInfo item) {
         cancelImmediateAppLaunch();
-        if (!mCosAppAnimations || !(source instanceof BubbleTextView icon) || item == null
+        if (!mCosAppAnimations || !(source instanceof BubbleTextView) || item == null
                 || item.itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION
-                || item.shouldUseBackgroundAnimation() || icon.getIcon() == null
+                || item.shouldUseBackgroundAnimation()
                 || !ValueAnimator.areAnimatorsEnabled()
                 || !source.isAttachedToWindow() || mLauncher.isInMultiWindowMode()
                 || mLauncher.shouldShowHomeBehindDesktop()
                 || !mLauncher.getSystemService(android.os.PowerManager.class).isInteractive()) {
             return null;
         }
-        android.view.ViewGroup root = (android.view.ViewGroup) mDragLayer.getParent();
-        if (root == null || !root.isAttachedToWindow()
-                || root.getWidth() == 0 || root.getHeight() == 0) return null;
         InteractionBoost.requestForAnimation(source);
-        LaunchPreview preview = new LaunchPreview(root, icon);
-        mImmediatePreview = preview;
-        preview.start();
-        return preview::remove;
+        return null;
     }
 
     public void cancelImmediateAppLaunch() {
@@ -440,7 +434,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             setClickable(false);
             animator.setDuration(CosAppAnimation.LAUNCH_DURATION);
-            animator.setInterpolator(LINEAR);
+            animator.setInterpolator(mOpeningInterpolator);
             animator.addUpdateListener(value -> {
                 if (mLauncher.isDestroyed() || !root.isAttachedToWindow()) {
                     remove();
@@ -464,6 +458,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
         void setProgress(float progress) {
             if (removed) return;
+            if (Math.abs(this.progress - progress) < 0.0001f) return;
             this.progress = progress;
             invalidate();
         }
@@ -499,14 +494,8 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         }
 
         boolean matchesWindow(RemoteAnimationTarget[] targets) {
-            Rect actual = getWindowTargetBounds(targets, 0);
             for (RemoteAnimationTarget target : targets) {
-                if (target.mode != MODE_OPENING) continue;
-                if (shouldCropToInset(target)) {
-                    actual.bottom = Math.min(actual.bottom,
-                            mSystemUiProxy.getHomeVisibilityState().getNavbarInsetPosition());
-                }
-                return actual.equals(predictedScreenBounds);
+                if (target.mode == MODE_OPENING) return true;
             }
             return false;
         }
@@ -516,9 +505,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             handedOff = true;
             animator.cancel();
             removeCallbacks(timeout);
-            postOnAnimation(() -> {
-                if (!removed) animate().alpha(0f).setDuration(64).withEndAction(this::remove).start();
-            });
+            animate().cancel();
+            root.getOverlay().remove(this);
+            if (mImmediatePreview == this) mImmediatePreview = null;
         }
 
         void restoreSource() {
@@ -535,7 +524,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             removeCallbacks(timeout);
             animate().cancel();
             root.getOverlay().remove(this);
-            restoreSource();
+            if (!handedOff) {
+                restoreSource();
+            }
             if (mImmediatePreview == this) mImmediatePreview = null;
         }
     }
@@ -949,7 +940,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             final float pushbackScale = isAppOpening
                     ? (mCosAppAnimations ? CosAppAnimation.HOME_SCALE : WORKSPACE_PUSHBACK_SCALE) : 1f;
             final float pushbackAlpha = isAppOpening
-                    ? (mCosAppAnimations ? 0f : WORKSPACE_PUSHBACK_ALPHA) : 1f;
+                    ? (mCosAppAnimations ? 1f : WORKSPACE_PUSHBACK_ALPHA) : 1f;
 
             viewsToAnimate.forEach(view -> {
                 if (mCosAppAnimations) {
@@ -983,7 +974,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             viewsToAnimate.forEach(Animations.Companion::cancelOngoingAnimation);
             viewsToAnimate.forEach(view -> {
                 // Cancellation restores the old hardware layer; cache only after that cleanup.
-                view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                if (!mCosAppAnimations) {
+                    view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                }
                 Animations.Companion.setOngoingAnimation(view, launcherAnimator);
             });
 
@@ -991,7 +984,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 viewsToAnimate.forEach(view -> {
                     SCALE_PROPERTY.set(view, 1f);
                     view.setAlpha(1f);
-                    view.setLayerType(View.LAYER_TYPE_NONE, null);
+                    if (!mCosAppAnimations) {
+                        view.setLayerType(View.LAYER_TYPE_NONE, null);
+                    }
 
                     // Reset the cached animation.
                     Animations.Companion.setOngoingAnimation(view, null /* animation */);
@@ -1097,11 +1092,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
         int[] dragLayerBounds = new int[2];
         mDragLayer.getLocationOnScreen(dragLayerBounds);
-        if (preview != null) {
-            launcherIconBounds.set(preview.iconBounds);
-            launcherIconBounds.offset(preview.predictedScreenBounds.left - dragLayerBounds[0],
-                    preview.predictedScreenBounds.top - dragLayerBounds[1]);
-        }
 
         final boolean hasSplashScreen;
         if (ENABLE_SHELL_STARTING_SURFACE) {
@@ -1120,8 +1110,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
         AnimOpenProperties prop = new AnimOpenProperties(mLauncher.getResources(), mDeviceProfile,
                 windowTargetBounds, launcherIconBounds, v, dragLayerBounds[0], dragLayerBounds[1],
-                hasSplashScreen, floatingView.isDifferentFromAppIcon(),
-                preview == null ? Float.NaN : preview.properties.initialAppIconScale);
+                hasSplashScreen, floatingView.isDifferentFromAppIcon(), Float.NaN);
         int left = prop.cropCenterXStart - prop.cropWidthStart / 2;
         int top = prop.cropCenterYStart - prop.cropHeightStart / 2;
         int right = left + prop.cropWidthStart;
@@ -1592,7 +1581,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
     private SurfaceControl addScrimLayer(SurfaceTransactionApplier applier,
             RemoteAnimationTargets targets) {
-        if (!appLaunchBlur() || !isAppLaunchBlurEnabled()) {
+        if (!appLaunchBlur() || !isAppLaunchBlurEnabled()
+                || !BlurUtils.supportsBlursOnWindows()
+                || !mLauncher.getDepthController().isCrossWindowBlursEnabled()) {
             return null;
         }
 
@@ -1739,25 +1730,31 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 BACKGROUND_APP.getDepth(mLauncher), CosAppAnimation.WALLPAPER_OPEN_DURATION,
                 CosAppAnimation.WALLPAPER_OPEN));
         boolean contentBlur = !scrimHandlesBlur && isAppLaunchBlurEnabled()
-                && !mLauncher.isInState(OVERVIEW);
+                && !mLauncher.isInState(OVERVIEW)
+                && depth.isCrossWindowBlursEnabled()
+                && BlurUtils.supportsBlursOnWindows();
         if (contentBlur) {
             ValueAnimator blur = ValueAnimator.ofFloat(0f, mMaxBlurRadius);
             blur.setDuration(CosAppAnimation.LAUNCH_DURATION);
             blur.setInterpolator(CosAppAnimation.OPEN);
             blur.addUpdateListener(value ->
-                    depth.setAppAnimationBlur((Float) value.getAnimatedValue()));
+                    depth.setAppAnimationBlur((float) value.getAnimatedValue()));
             result.play(blur);
         }
         result.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationStart(Animator animation) {
-                depth.pauseBlursOnWindows(true);
+                if (contentBlur) {
+                    depth.pauseBlursOnWindows(true);
+                }
             }
 
             @Override
             public void onAnimationEnd(Animator animation) {
-                depth.setAppAnimationBlur(-1f);
-                depth.pauseBlursOnWindows(false);
+                if (contentBlur) {
+                    depth.setAppAnimationBlur(-1f);
+                    depth.pauseBlursOnWindows(false);
+                }
             }
         });
         return result;
@@ -2120,7 +2117,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
 
             // We want the window alpha to be 0 once this threshold is met, so that the
             // FloatingIconView can be seen morphing into the icon shape.
-            final float windowAlphaThreshold = useCosSpring ? 0f : useIconSpring
+            final float windowAlphaThreshold = useCosSpring ? 0.86f : useIconSpring
                     ? OosAppCloseAnimation.SHAPE_PROGRESS_START : 1f - SHAPE_PROGRESS_DURATION;
 
             final float customEndRadius =
@@ -2684,6 +2681,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                     @Override
                     public void onAnimationEnd(Animator animation) {
                         if (mCosAnimation == anim) mCosAnimation = null;
+                        if (mPreview != null) {
+                            mPreview.restoreSource();
+                        }
                     }
                 });
             }
@@ -2700,7 +2700,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                     && mPreview.matchesWindow(appTargets);
             if (mPreview != null) {
                 if (!continuePreview) mPreview.remove();
-                else mPreview.restoreSource();
             }
             if (launchingFromWidget) {
                 composeWidgetLaunchAnimator(anim, (LauncherAppWidgetHostView) mV, appTargets,
@@ -2736,12 +2735,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 }
             }
 
-            long previewPlayTime = continuePreview ? mPreview.elapsed() : 0;
             result.setAnimation(anim, mLauncher, mOnEndCallback::executeAllAndDestroy,
                     skipFirstFrame);
             if (continuePreview && anim.isStarted()) {
-                anim.setCurrentPlayTime(Math.min(previewPlayTime,
-                        Math.max(0, anim.getTotalDuration() - 1)));
                 mPreview.handOff();
             }
         }
@@ -2750,6 +2746,9 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         public void onAnimationCancelled() {
             mCancelled = true;
             if (mCosAnimation != null) mCosAnimation.cancel();
+            if (mPreview != null) {
+                mPreview.restoreSource();
+            }
             mOnEndCallback.executeAllAndDestroy();
         }
     }
@@ -3154,10 +3153,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                             .setAlpha(getWindowAlpha(progress));
 
                     float cornerRadius = getCornerRadius(progress) / scale;
-                    if (Math.abs(mLastCornerRadius - cornerRadius) >= 4f || progress >= 1f) {
-                        builder.setCornerRadius(cornerRadius);
-                        mLastCornerRadius = cornerRadius;
-                    }
+                    builder.setCornerRadius(cornerRadius);
                 } else if (target.mode == MODE_OPENING) {
                     mMatrix.setTranslate(mTmpPos.x, mTmpPos.y);
                     builder.setMatrix(mMatrix)
