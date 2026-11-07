@@ -122,4 +122,6 @@
     <string name="universal_search_hint">Search apps and more</string>
     <string name="search_toggle_on">On</string>
     <string name="search_toggle_off">Off</string>
+    <string name="search_glanceable_title">Glanceable summary card</string>
+    <string name="search_glanceable_summary">Show upcoming calendar events, alarms or battery info before typing</string>
 </resources>
