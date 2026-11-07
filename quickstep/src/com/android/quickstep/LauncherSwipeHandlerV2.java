@@ -265,6 +265,9 @@ public class LauncherSwipeHandlerV2 extends AbsSwipeUpHandler<
                 if (mSiblingAnimation != null && mSiblingAnimation.isCos()) {
                     return 1f - mSiblingAnimation.getCosFadeProgress();
                 }
+                if (shouldUseCosCloseAnimation()) {
+                    return 1f;
+                }
                 return shouldUseIconCloseAnimation()
                         ? OosAppCloseAnimation.getWindowAlpha(progress)
                         : super.getWindowAlpha(progress);
@@ -280,11 +283,14 @@ public class LauncherSwipeHandlerV2 extends AbsSwipeUpHandler<
                 // seen morphing into the icon shape. But before the threshold, we want to limit
                 // the alpha to reduce the blur effect behind the window.
                 boolean useIconCloseAnimation = shouldUseIconCloseAnimation();
-                boolean cos = mSiblingAnimation != null && mSiblingAnimation.isCos();
-                float iconAlpha = cos ? mSiblingAnimation.getCosFadeProgress() : useIconCloseAnimation
+                boolean cos = (mSiblingAnimation != null && mSiblingAnimation.isCos())
+                        || shouldUseCosCloseAnimation();
+                float iconAlpha = cos
+                        ? (mSiblingAnimation != null ? mSiblingAnimation.getCosFadeProgress() : 0f)
+                        : useIconCloseAnimation
                         ? OosAppCloseAnimation.getIconAlpha(progress)
                         : Interpolators.clampToProgress(progress, 0f, windowAlphaThreshold);
-                float shapeProgressStart = cos ? 0f : useIconCloseAnimation
+                float shapeProgressStart = cos ? 0.86f : useIconCloseAnimation
                         ? OosAppCloseAnimation.SHAPE_PROGRESS_START : windowAlphaThreshold;
                 floatingIconView.update(iconAlpha, currentRect, progress, shapeProgressStart,
                         radius, false, overlayAlpha);

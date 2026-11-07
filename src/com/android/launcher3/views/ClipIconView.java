@@ -186,8 +186,6 @@ public class ClipIconView extends View implements ClipPathView {
         container.setPivotY(0);
         container.setScaleX(scale);
         container.setScaleY(scale);
-
-        container.invalidate();
     }
 
     private void update(RectF rect, float progress, float shapeProgressStart, float cornerRadius,
