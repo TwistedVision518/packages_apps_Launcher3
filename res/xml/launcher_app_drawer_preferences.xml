@@ -253,6 +253,13 @@
                 launcher:iconSpaceReserved="false" />
 
             <SwitchPreferenceCompat
+                android:key="pref_search_zero_query_tools"
+                android:title="@string/search_zero_query_tools_title"
+                android:summary="@string/search_zero_query_tools_summary"
+                android:defaultValue="true"
+                launcher:iconSpaceReserved="false" />
+
+            <SwitchPreferenceCompat
                 android:key="pref_search_recent_screenshots"
                 android:title="@string/search_recent_screenshots_title"
                 android:summary="@string/search_recent_screenshots_summary"

@@ -175,6 +175,15 @@ public class UniversalSearchAlgorithm implements SearchAlgorithm<AdapterItem> {
         }
         items.addAll(historyItems(
                 () -> publishEmptyQuery(token, query, appItems, callback)));
+        if (LauncherPrefs.SEARCH_ZERO_QUERY_TOOLS.get(mContext)) {
+            List<UniversalSearchResult> quickTools = ZeroQueryTools.getQuickTools(mContext);
+            if (!quickTools.isEmpty()) {
+                items.add(AdapterItem.asSearchSection(UniversalSearchResult.SOURCE_QUICK_ACTION));
+                for (UniversalSearchResult tool : quickTools) {
+                    items.add(AdapterItem.asSearchResult(tool));
+                }
+            }
+        }
         if (LauncherPrefs.SEARCH_RECENT_SCREENSHOTS.get(mContext)) {
             List<UniversalSearchResult> shots = MediaProvider.recentScreenshots(
                     mContext, MAX_SCREENSHOTS);

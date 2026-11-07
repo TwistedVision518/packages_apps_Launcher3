@@ -67,6 +67,7 @@ public class UniversalSearchResult {
 
     /** Rows that stand in for something else and must not be ranked or remembered. */
     public boolean isPlaceholder() {
-        return onTap != null || "permission".equals(id);
+        return onTap != null || "permission".equals(id)
+                || (id != null && (id.startsWith("quick_tool_") || id.startsWith("glanceable_")));
     }
 }
