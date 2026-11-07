@@ -388,9 +388,6 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     }
 
     public void setUniversalSearchActive(boolean active) {
-        if (mUniversalSearchActive == active) {
-            return;
-        }
         mUniversalSearchActive = active;
         if (mSearchContainer instanceof com.android.launcher3.allapps.search.AppsSearchContainerLayout) {
             ((com.android.launcher3.allapps.search.AppsSearchContainerLayout) mSearchContainer).setUniversalSearch(active);

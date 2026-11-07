@@ -29,9 +29,7 @@ import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Outline;
-import android.graphics.Paint;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.PaintDrawable;
@@ -106,9 +104,6 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     private Drawable mSearchIcon;
     private Drawable mClearIcon;
     private Drawable mSpacerIcon;
-    private final Paint mFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint mBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF mBorderRect = new RectF();
 
     private final TextWatcher mTextWatcher = new TextWatcher() {
         @Override
@@ -171,7 +166,10 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         if (mAppsView != null) {
             mAppsView.getAppsStore().addUpdateListener(this);
             mSearchBarController.refreshSearchResult();
+            setUniversalSearch(mAppsView.isUniversalSearchActive());
         }
+        updateSearchBarStyle();
+        postInvalidate();
     }
 
     @Override
@@ -241,9 +239,6 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     }
 
     public void setUniversalSearch(boolean active) {
-        if (mIsUniversalSearch == active) {
-            return;
-        }
         mIsUniversalSearch = active;
         updateSearchBarStyle();
         requestLayout();
@@ -275,6 +270,31 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         setCursorVisible(hasText);
     }
 
+    private void setUpUniversalSearchBackground() {
+        float cornerRadius = getHeight() > 0 ? (getHeight() / 2f) : (Utilities.dpToPx(48) / 2f);
+        mBackgroundTintDrawable.setShape(GradientDrawable.RECTANGLE);
+        mBackgroundTintDrawable.setCornerRadius(cornerRadius);
+
+        boolean isDarkTheme = Utilities.isDarkTheme(getContext());
+        int baseColor = LauncherPrefs.DOCK_THEME.get(getContext())
+                ? Themes.getAttrColor(getContext(), R.attr.qsbFillColorThemed)
+                : Themes.getAttrColor(getContext(), R.attr.qsbFillColor);
+
+        int opacity = Utilities.boundToRange(LauncherPrefs.HOTSEAT_QSB_OPACITY.get(getContext()), 20, 100);
+        int alpha = Math.round((isDarkTheme ? 175f : 195f) * opacity / 100f);
+        int fillColor = Color.argb(alpha, Color.red(baseColor), Color.green(baseColor), Color.blue(baseColor));
+
+        int strokeWidth = Math.max(1, Utilities.dpToPx(1.5f));
+        int strokeColor = isDarkTheme
+                ? Color.argb(140, 255, 255, 255)
+                : Color.argb(90, 0, 0, 0);
+
+        mBackgroundTintDrawable.setColor(fillColor);
+        mBackgroundTintDrawable.setStroke(strokeWidth, strokeColor);
+        setClipToOutline(false);
+        setBackground(mBackgroundTintDrawable);
+    }
+
     private void updateSearchBarStyle() {
         if (isUniversalSearch()) {
             updateUniversalSearchDrawablesAndGravity();
@@ -284,7 +304,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
             setTextSize(TypedValue.COMPLEX_UNIT_PX,
                     getResources().getDimension(R.dimen.compact_search_bar_text_size));
             setPaddingRelative(Utilities.dpToPx(12), getPaddingTop(), Utilities.dpToPx(12), getPaddingBottom());
-            setBackground(null);
+            setUpUniversalSearchBackground();
             updateBlurPreferences();
         } else {
             boolean isCompact = LauncherPrefs.COMPACT_SEARCH_BAR.get(getContext());
@@ -452,46 +472,22 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     }
 
     @Override
-    protected void onDraw(Canvas canvas) {
-        if (isUniversalSearch()) {
-            drawUniversalSearchBackground(canvas);
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        if (isUniversalSearch() && h > 0) {
+            mBackgroundTintDrawable.setCornerRadius(h / 2f);
         }
-        super.onDraw(canvas);
     }
 
-    private void drawUniversalSearchBackground(Canvas canvas) {
-        float cornerRadius = getHeight() / 2f;
-
-        if (canvas.isHardwareAccelerated()) {
+    @Override
+    public void draw(Canvas canvas) {
+        if (isUniversalSearch() && canvas.isHardwareAccelerated()) {
             updateBlurState();
             if (mBackdropBlur.isEnabled()) {
-                mBackdropBlur.draw(canvas, 0, 0, getWidth(), getHeight(), cornerRadius);
+                mBackdropBlur.draw(canvas, 0, 0, getWidth(), getHeight(), getHeight() / 2f);
             }
         }
-
-        // Frosted translucent capsule fill
-        boolean isDarkMain = Themes.getAttrBoolean(getContext(), R.attr.isMainColorDark);
-        int fillColor = isDarkMain
-                ? Color.argb(190, 245, 245, 248)
-                : Color.argb(170, 18, 18, 24);
-
-        float strokeWidth = Math.max(2f, Utilities.dpToPx(1.5f));
-        int strokeColor = isDarkMain
-                ? Color.argb(90, 0, 0, 0)
-                : Color.argb(140, 255, 255, 255);
-
-        mFillPaint.setStyle(Paint.Style.FILL);
-        mFillPaint.setColor(fillColor);
-        canvas.drawRoundRect(0, 0, getWidth(), getHeight(), cornerRadius, cornerRadius, mFillPaint);
-
-        float halfStroke = strokeWidth / 2f;
-        mBorderRect.set(halfStroke, halfStroke, getWidth() - halfStroke, getHeight() - halfStroke);
-        float innerRadius = Math.max(0, cornerRadius - halfStroke);
-
-        mBorderPaint.setStyle(Paint.Style.STROKE);
-        mBorderPaint.setStrokeWidth(strokeWidth);
-        mBorderPaint.setColor(strokeColor);
-        canvas.drawRoundRect(mBorderRect, innerRadius, innerRadius, mBorderPaint);
+        super.draw(canvas);
     }
 
     private void setUpBackground(boolean showQSBStyle) {
