@@ -148,7 +148,9 @@ public class MediaProvider implements SearchProvider {
                     result.thumbnail = result.icon != null;
                 }
                 if (result.icon == null) {
-                    result.iconRes = com.android.launcher3.R.drawable.ic_search_file;
+                    boolean isApk = name != null && name.toLowerCase().endsWith(".apk");
+                    result.iconRes = isApk ? com.android.launcher3.R.drawable.ic_search_apk
+                            : com.android.launcher3.R.drawable.ic_search_file;
                 }
                 out.add(result);
             }

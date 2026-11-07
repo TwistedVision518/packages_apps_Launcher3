@@ -1164,6 +1164,15 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         layoutParams.removeRule(RelativeLayout.ALIGN_PARENT_TOP);
         layoutParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
         layoutParams.topMargin = 0;
+        int extraMargin = getResources().getDimensionPixelSize(R.dimen.all_apps_search_bar_bottom_padding_extra);
+        int bottomPaddingArea = mInsets != null ? Math.max(mInsets.bottom, mNavBarScrimHeight) : mNavBarScrimHeight;
+        if (bottomPaddingArea == 0 && getRootWindowInsets() != null) {
+            bottomPaddingArea = getRootWindowInsets().getInsets(WindowInsets.Type.systemBars()).bottom;
+        }
+        if (bottomPaddingArea == 0) {
+            bottomPaddingArea = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 32, getResources().getDisplayMetrics());
+        }
+        layoutParams.bottomMargin = bottomPaddingArea + extraMargin;
         mSearchContainer.setLayoutParams(layoutParams);
     }
 
