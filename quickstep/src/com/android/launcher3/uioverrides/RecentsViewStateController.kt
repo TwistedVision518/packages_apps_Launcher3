@@ -114,6 +114,7 @@ class RecentsViewStateController(private val launcher: QuickstepLauncher) :
         if (config.hasAnimationFlag(SKIP_OVERVIEW)) return
 
         val scaleAndOffset = toState.getOverviewScaleAndOffset(launcher)
+        val fromState = launcher.stateManager.state
 
         builder.setFloat(
             recentsView,
