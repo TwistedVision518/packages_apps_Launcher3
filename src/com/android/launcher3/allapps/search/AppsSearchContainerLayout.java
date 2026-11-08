@@ -377,7 +377,6 @@ public class AppsSearchContainerLayout extends ExtendedEditText
                             return true;
                         }
                     }
-
                     if (mAppsView != null && !mAppsView.isUniversalSearchActive()) {
                         mAppsView.setUniversalSearchActive(true);
                     }
