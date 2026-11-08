@@ -1538,7 +1538,7 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     @Override
     public float[] getNormalOverviewScaleAndOffset() {
         return DisplayController.getNavigationMode(this).hasGestures
-                ? new float[] {1, 1} : new float[] {1.1f, NO_OFFSET};
+                ? new float[] {0.96f, NO_OFFSET} : new float[] {1.1f, NO_OFFSET};
     }
 
     @Override
