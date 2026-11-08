@@ -48,9 +48,9 @@ import com.android.quickstep.views.RecentsView;
  */
 public class OverviewState extends LauncherState {
 
-    private static final int OVERVIEW_SLIDE_IN_DURATION = 240;
-    private static final int OVERVIEW_POP_IN_DURATION = 240;
-    private static final int OVERVIEW_EXIT_DURATION = 220;
+    private static final int OVERVIEW_SLIDE_IN_DURATION = 320;
+    private static final int OVERVIEW_POP_IN_DURATION = 300;
+    private static final int OVERVIEW_EXIT_DURATION = 280;
 
     protected static final Rect sTempRect = new Rect();
 

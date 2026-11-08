@@ -146,15 +146,14 @@ CONTAINER : StatefulContainer<STATE_TYPE> {
         config.setInterpolator(ANIM_WORKSPACE_FADE, ACCELERATE)
 
         if (DisplayController.getNavigationMode(container).hasGestures && overview.hasTaskViews()) {
-            // Overview is going offscreen, so keep it at its current scale and opacity.
-            config.setInterpolator(ANIM_OVERVIEW_SCALE, FINAL_FRAME)
-            config.setInterpolator(ANIM_OVERVIEW_FADE, FINAL_FRAME)
+            config.setInterpolator(ANIM_OVERVIEW_SCALE, clampToProgress(ACCELERATE, 0f, 0.9f))
+            config.setInterpolator(ANIM_OVERVIEW_FADE, DECELERATE_1_7)
             config.setInterpolator(
                 ANIM_OVERVIEW_TRANSLATE_X,
                 if (fromState == OVERVIEW_SPLIT_SELECT) EMPHASIZED_DECELERATE
                 else clampToProgress(FAST_OUT_SLOW_IN, 0f, 0.75f),
             )
-            config.setInterpolator(ANIM_OVERVIEW_TRANSLATE_Y, FINAL_FRAME)
+            config.setInterpolator(ANIM_OVERVIEW_TRANSLATE_Y, ACCELERATE)
 
             // Scroll RecentsView to page 0 as it goes offscreen, if necessary.
             val numPagesToScroll = overview.nextPage - DEFAULT_PAGE
@@ -219,11 +218,16 @@ CONTAINER : StatefulContainer<STATE_TYPE> {
                 )
                 config.setInterpolator(ANIM_WORKSPACE_TRANSLATE, ACCELERATE)
 
-                // Scrolling in tasks, so show straight away
                 config.setInterpolator(
                     ANIM_OVERVIEW_FADE,
-                    if (overview.hasTaskViews()) INSTANT else OVERSHOOT_1_2,
+                    OVERSHOOT_1_2,
                 )
+
+                if (overview.visibility != View.VISIBLE || overview.contentAlpha == 0f) {
+                    val startTranslationY = container.deviceProfile.deviceProperties.heightPx * 0.10f
+                    RecentsView.TASK_SECONDARY_TRANSLATION[overview] = startTranslationY
+                    RecentsView.RECENTS_SCALE_PROPERTY[overview] = 0.94f
+                }
             } else {
                 config.setInterpolator(ANIM_WORKSPACE_SCALE, OVERSHOOT_1_2)
                 config.setInterpolator(ANIM_OVERVIEW_FADE, OVERSHOOT_1_2)

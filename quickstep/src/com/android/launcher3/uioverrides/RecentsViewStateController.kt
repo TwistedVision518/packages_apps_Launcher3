@@ -114,12 +114,6 @@ class RecentsViewStateController(private val launcher: QuickstepLauncher) :
         if (config.hasAnimationFlag(SKIP_OVERVIEW)) return
 
         val scaleAndOffset = toState.getOverviewScaleAndOffset(launcher)
-        val fromState = launcher.stateManager.state
-
-        if (toState.isRecentsViewVisible && !fromState.isRecentsViewVisible) {
-            val startTranslationY = launcher.deviceProfile.deviceProperties.heightPx * 0.10f
-            TASK_SECONDARY_TRANSLATION.set(recentsView, startTranslationY)
-        }
 
         builder.setFloat(
             recentsView,
@@ -134,22 +128,15 @@ class RecentsViewStateController(private val launcher: QuickstepLauncher) :
             config.getInterpolator(ANIM_OVERVIEW_TRANSLATE_X, LINEAR),
         )
 
-        if (!toState.isRecentsViewVisible && fromState.isRecentsViewVisible) {
-            val exitTranslationY = launcher.deviceProfile.deviceProperties.heightPx * 0.06f
-            builder.setFloat(
-                recentsView,
-                TASK_SECONDARY_TRANSLATION,
-                exitTranslationY,
-                config.getInterpolator(ANIM_OVERVIEW_TRANSLATE_Y, EMPHASIZED_ACCELERATE),
-            )
-        } else {
-            builder.setFloat(
-                recentsView,
-                TASK_SECONDARY_TRANSLATION,
-                0f,
-                config.getInterpolator(ANIM_OVERVIEW_TRANSLATE_Y, EMPHASIZED_DECELERATE),
-            )
-        }
+        val targetTranslationY =
+            if (toState.isRecentsViewVisible) 0f
+            else launcher.deviceProfile.deviceProperties.heightPx * 0.08f
+        builder.setFloat(
+            recentsView,
+            TASK_SECONDARY_TRANSLATION,
+            targetTranslationY,
+            config.getInterpolator(ANIM_OVERVIEW_TRANSLATE_Y, EMPHASIZED_DECELERATE),
+        )
 
         builder.setFloat(
             recentsView,
