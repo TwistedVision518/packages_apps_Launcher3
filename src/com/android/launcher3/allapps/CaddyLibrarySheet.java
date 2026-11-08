@@ -192,7 +192,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
             mEditingSelection = new LinearLayout(getContext());
             mEditingSelection.setGravity(Gravity.CENTER_VERTICAL);
             mEditingSelection.addView(mSelectionCount, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1));
-            TextView reset = button(R.string.caddy_use_random);
+            TextView reset = button(R.string.caddy_use_suggestions);
             reset.setOnClickListener(v -> {
                 mSelected.clear();
                 updateSelectionCount();
