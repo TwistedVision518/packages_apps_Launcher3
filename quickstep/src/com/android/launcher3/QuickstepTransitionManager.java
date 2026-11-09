@@ -342,7 +342,7 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         }
     }
 
-    /** A noninteractive overlay, using the same crop/scale path as the real opening window. */
+    /** A noninteractive icon overlay following the real opening window's motion. */
     private final class LaunchPreview extends View {
         final BubbleTextView source;
         final android.view.ViewGroup root;
@@ -350,8 +350,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
         final RectF frame = new RectF();
         final Rect drawableBounds = new Rect();
         final Rect predictedScreenBounds = new Rect();
-        final android.graphics.Paint fill = new android.graphics.Paint(
-                android.graphics.Paint.ANTI_ALIAS_FLAG);
         final android.graphics.drawable.Drawable logo;
         final Rect targetBounds = new Rect();
         final float originalAlpha;
@@ -391,7 +389,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             android.graphics.drawable.Drawable.ConstantState state =
                     source.getIcon().getConstantState();
             logo = state == null ? source.getIcon() : state.newDrawable(getResources()).mutate();
-            fill.setColor(iconBackgroundColor(logo));
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             setClickable(false);
             animator.setDuration(CosAppAnimation.LAUNCH_DURATION);
@@ -403,42 +400,6 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
                 }
                 setProgress((Float) value.getAnimatedValue());
             });
-        }
-
-        private int iconBackgroundColor(Drawable icon) {
-            final int size = 48;
-            int color = Color.WHITE;
-            Rect bounds = new Rect(icon.getBounds());
-            android.graphics.Bitmap hardware = null;
-            android.graphics.Bitmap bitmap = null;
-            try {
-                android.graphics.Picture picture = new android.graphics.Picture();
-                icon.setBounds(0, 0, size, size);
-                android.graphics.Canvas canvas = picture.beginRecording(size, size);
-                try {
-                    icon.draw(canvas);
-                } finally {
-                    picture.endRecording();
-                }
-                hardware = android.graphics.Bitmap.createBitmap(picture, size, size,
-                        android.graphics.Bitmap.Config.HARDWARE);
-                bitmap = hardware.copy(android.graphics.Bitmap.Config.ARGB_8888, false);
-                if (bitmap != null) {
-                    for (int y = 2; y < size / 2; y++) {
-                        if (Color.alpha(bitmap.getPixel(size / 2, y)) == 0xff) {
-                            color = bitmap.getPixel(size / 2, y + 2) | 0xff000000;
-                            break;
-                        }
-                    }
-                }
-            } catch (RuntimeException e) {
-                Log.w(TAG, "Launch preview: icon colour unavailable", e);
-            } finally {
-                if (bitmap != null) bitmap.recycle();
-                if (hardware != null) hardware.recycle();
-                icon.setBounds(bounds);
-            }
-            return color;
         }
 
         void start() {
@@ -464,9 +425,8 @@ public class QuickstepTransitionManager implements OnDeviceProfileChangeListener
             if (removed) return;
             float t = mCosOpeningInterpolator.getInterpolation(progress);
             cosOpenRect(iconBounds, 0, 0, targetBounds, t, frame);
-            float radius = cosOpenRadius(iconBounds, t);
-            fill.setAlpha(Math.round(255 * Math.min(1f, progress * 8f)));
-            canvas.drawRoundRect(frame, radius, radius, fill);
+            // The icon background can differ from the app's splash screen or task snapshot.
+            // Only draw the icon until the opening surface supplies the actual window background.
             float cx = frame.centerX();
             float cy = frame.centerY();
             float size = Math.min(Math.min(frame.width(), frame.height()),
