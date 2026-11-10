@@ -29,7 +29,7 @@
     <dimen name="overview_proactive_row_height">48dp</dimen>
     <dimen name="overview_proactive_row_bottom_margin">16dp</dimen>
 
-    <dimen name="overview_minimum_next_prev_size">50dp</dimen>
+    <dimen name="overview_minimum_next_prev_size">24dp</dimen>
 
     <!--  Overflown Apps Container View  -->
     <!--  The padding of the container view and the space between the child app icons -->
@@ -37,7 +37,7 @@
 
     <!--  Overview Task Views  -->
     <!--  The thumbnail uses up to this much of the total screen height/width in Overview -->
-    <item name="overview_max_scale" format="float" type="dimen">0.7</item>
+    <item name="overview_max_scale" format="float" type="dimen">0.80</item>
     <!--  A touch target for icons, sometimes slightly larger than the icons themselves  -->
     <dimen name="task_thumbnail_icon_size">48dp</dimen>
     <!--  The icon size for the focused task, placed in center of touch target  -->
@@ -126,8 +126,9 @@
     <dimen name="task_dismiss_button_margin">4dp</dimen>
 
     <!-- Overrideable in overlay that provides the Overview Actions. -->
-    <dimen name="overview_actions_top_margin">30dp</dimen>
+    <dimen name="overview_actions_top_margin">16dp</dimen>
     <dimen name="overview_actions_height">126dp</dimen>
+    <dimen name="overview_actions_height_single_row">68dp</dimen>
     <dimen name="overview_actions_button_spacing">16dp</dimen>
     <dimen name="overview_actions_button_radius">28dp</dimen>
     <dimen name="overview_actions_button_vertical_padding">10dp</dimen>
