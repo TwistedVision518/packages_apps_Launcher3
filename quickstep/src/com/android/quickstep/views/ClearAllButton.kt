@@ -16,20 +16,33 @@
 package com.android.quickstep.views
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.AttributeSet
 import android.util.FloatProperty
+import android.view.CrossWindowBlurListeners
 import android.widget.Button
+import com.android.axion.blur.ui.view.AxViewBackdropBlur
 import com.android.launcher3.Flags.enableFocusOutline
+import com.android.launcher3.LauncherPrefs
 import com.android.launcher3.R
+import com.android.launcher3.Utilities
 import com.android.launcher3.util.KFloatProperty
 import com.android.launcher3.util.MultiPropertyDelegate
 import com.android.launcher3.util.MultiValueAlpha
 import com.android.quickstep.util.BorderAnimator
 import com.android.quickstep.util.BorderAnimator.Companion.createSimpleBorderAnimator
+import java.util.function.Consumer
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class ClearAllButton
 @JvmOverloads
@@ -39,6 +52,26 @@ constructor(
     defStyleAttr: Int = 0,
     defStyleRes: Int = 0,
 ) : Button(context, attrs, defStyleAttr, defStyleRes) {
+
+    private val backdropBlur = AxViewBackdropBlur(this, false)
+    private var blurEnabled = true
+    private var crossWindowBlurEnabled = false
+    private var blurDepth = 45
+    private val crossWindowBlurListener = Consumer<Boolean> { onCrossWindowBlurEnabledChanged(it) }
+    private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (LauncherPrefs.BLUR_DEPTH.sharedPrefKey == key
+                || LauncherPrefs.RECENTS_CLEAR_ALL_BLUR.sharedPrefKey == key) {
+            updateBlurPreferences()
+            updateBackground()
+            postInvalidate()
+        }
+    }
+
+    init {
+        backdropBlur.setOverlayColor(Color.TRANSPARENT)
+        updateBlurPreferences()
+        updateBackground()
+    }
 
     private val clearAllButtonAlpha =
         object : MultiValueAlpha(this, Alpha.entries.size) {
@@ -167,9 +200,166 @@ constructor(
         }
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        backdropBlur.onAttachedToWindow()
+        crossWindowBlurEnabled = CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled
+        CrossWindowBlurListeners.getInstance().addListener(
+            context.mainExecutor, crossWindowBlurListener
+        )
+        LauncherPrefs.getPrefs(context).registerOnSharedPreferenceChangeListener(prefChangeListener)
+        updateBlurPreferences()
+        updateBackground()
+        postInvalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+        backdropBlur.onDetachedFromWindow()
+        CrossWindowBlurListeners.getInstance().removeListener(crossWindowBlurListener)
+        LauncherPrefs.getPrefs(context).unregisterOnSharedPreferenceChangeListener(prefChangeListener)
+        super.onDetachedFromWindow()
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        backdropBlur.onVisibilityAggregated(isVisible)
+        if (isVisible) {
+            updateBackground()
+            postInvalidate()
+        }
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == VISIBLE) {
+            updateBlurPreferences()
+            updateBackground()
+            postInvalidate()
+        } else {
+            backdropBlur.setEnabled(false)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateBackground()
+        postInvalidate()
+    }
+
+    override fun verifyDrawable(who: Drawable): Boolean {
+        return super.verifyDrawable(who) || backdropBlur.verifyDrawable(who)
+    }
+
+    private fun onCrossWindowBlurEnabledChanged(enabled: Boolean) {
+        crossWindowBlurEnabled = enabled
+        updateBlurState(null)
+        updateBackground()
+        postInvalidate()
+    }
+
+    private fun updateBlurPreferences() {
+        blurEnabled = LauncherPrefs.RECENTS_CLEAR_ALL_BLUR.get(context)
+        blurDepth = maxOf(0, LauncherPrefs.BLUR_DEPTH.get(context))
+        backdropBlur.setBlurRadiusPx(blurDepth.toFloat())
+        updateBlurState(null)
+    }
+
+    private fun isBlurAvailable(): Boolean {
+        return blurEnabled && crossWindowBlurEnabled && blurDepth > 0
+    }
+
+    private fun canDrawBlur(canvas: Canvas?): Boolean {
+        val hw = canvas?.isHardwareAccelerated ?: isHardwareAccelerated
+        return isBlurAvailable() && isAttachedToWindow && hw && width > 0 && height > 0 && windowVisibility == VISIBLE
+    }
+
+    private fun updateBlurState(canvas: Canvas? = null) {
+        backdropBlur.setEnabled(canDrawBlur(canvas))
+        backdropBlur.setSurfaceAlpha((255f * Utilities.boundToRange(alpha, 0f, 1f)).roundToInt())
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (h > 0 && h != oldh) {
+            updateBackground()
+        }
+    }
+
+    private fun updateBackground() {
+        val cornerRadius = if (height > 0) height / 2f else Utilities.dpToPx(26f).toFloat()
+        val isDark = Utilities.isDarkTheme(context)
+        val blurActive = isBlurAvailable()
+
+        backdropBlur.setOverlayColor(Color.TRANSPARENT)
+
+        val topColor: Int
+        val bottomColor: Int
+        if (isDark) {
+            topColor = if (blurActive) {
+                Color.argb(28, 255, 255, 255)
+            } else {
+                Color.argb(160, 45, 48, 55)
+            }
+            bottomColor = if (blurActive) {
+                Color.argb(50, 255, 255, 255)
+            } else {
+                Color.argb(200, 32, 34, 40)
+            }
+        } else {
+            topColor = if (blurActive) {
+                Color.argb(120, 255, 255, 255)
+            } else {
+                Color.argb(210, 250, 252, 255)
+            }
+            bottomColor = if (blurActive) {
+                Color.argb(165, 240, 242, 248)
+            } else {
+                Color.argb(235, 235, 238, 245)
+            }
+        }
+
+        val strokeWidth = maxOf(1, Utilities.dpToPx(1f))
+        val strokeColor = if (isDark) {
+            Color.argb(65, 255, 255, 255)
+        } else {
+            Color.argb(35, 0, 0, 0)
+        }
+
+        val contentDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            colors = intArrayOf(topColor, bottomColor)
+            setStroke(strokeWidth, strokeColor)
+        }
+
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            setColor(Color.WHITE)
+        }
+
+        val rippleColor = if (isDark) Color.argb(40, 255, 255, 255) else Color.argb(25, 0, 0, 0)
+        val rippleDrawable = RippleDrawable(
+            ColorStateList.valueOf(rippleColor),
+            contentDrawable,
+            mask
+        )
+
+        background = rippleDrawable
+        clipToOutline = false
+    }
+
     override fun draw(canvas: Canvas) {
-        focusBorderAnimator?.drawBorder(canvas)
+        if (canvas.isHardwareAccelerated) {
+            updateBlurState(canvas)
+            if (backdropBlur.isEnabled()) {
+                val cornerRadius = height / 2f
+                backdropBlur.draw(canvas, 0, 0, width, height, cornerRadius)
+            }
+        }
         super.draw(canvas)
+        focusBorderAnimator?.drawBorder(canvas)
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {

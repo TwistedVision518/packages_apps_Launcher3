@@ -337,6 +337,7 @@ constructor(@ApplicationContext private val encryptedContext: Context) {
         @JvmField val HOTSEAT_BOTTOM_SPACE_DEFAULT = backedUpItem("pref_hotseat_bottom_space_default", true)
         @JvmField val ICON_SIZE = backedUpItem("pref_custom_icon_size", 100)
         @JvmField val RECENTS_CLEAR_ALL = backedUpItem("pref_recents_clear_all", true)
+        @JvmField val RECENTS_CLEAR_ALL_BLUR = backedUpItem("pref_recents_clear_all_blur", true)
         @JvmField val RECENTS_LENS = backedUpItem("pref_recents_lens", true)
         @JvmField val RECENTS_MEMINFO = backedUpItem("pref_recents_meminfo", false)
         @JvmField val RECENTS_MEMINFO_ZRAM = backedUpItem("pref_recents_meminfo_zram", false)

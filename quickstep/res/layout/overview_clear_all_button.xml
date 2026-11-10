@@ -20,8 +20,12 @@
     android:theme="?attr/overviewActionButtonStyle"
     android:id="@+id/clear_all"
     android:layout_width="wrap_content"
-    android:layout_height="wrap_content"
+    android:layout_height="52dp"
+    android:minWidth="168dp"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
     android:textAlignment="center"
     android:text="@string/recents_clear_all"
+    android:textColor="?android:attr/textColorPrimary"
     launcher:focusBorderColor="@color/materialColorOutline"
-    android:textSize="14sp" />
+    android:textSize="15sp" />
