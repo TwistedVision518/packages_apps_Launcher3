@@ -405,6 +405,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
         if (mRecycler == null || mPanel == null) {
             return;
         }
+        mPanel.setClipChildren(false);
         mRecycler.setClipChildren(false);
 
         BaseDragLayer dragLayer = mActivityContext.getDragLayer();
@@ -600,6 +601,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
         hideSourceView();
         applyAnimationProgress(1f);
         resetIconTransitions();
+        mPanel.setClipChildren(true);
         mRecycler.setClipChildren(true);
         mPanel.requestFocus();
         announceAccessibilityChanges();
@@ -975,7 +977,6 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
             if (bg != null) {
                 bg.setAlpha(Math.round(mBgAlpha * 255));
             }
-            setElevation(dp(16 * mBgAlpha));
             setClipToOutline(mBgAlpha >= 0.99f);
             invalidate();
         }
