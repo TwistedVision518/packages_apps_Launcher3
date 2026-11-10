@@ -49,7 +49,8 @@ data class OverviewProfile(
                     || (LauncherPrefs.RECENTS_LENS.get(context) && Utilities.isGSAEnabled(context)))
             val hasClearAll = LauncherPrefs.RECENTS_CLEAR_ALL.get(context)
             val actionsHeight = if (mIsNewStyle) {
-                if (hasSecondRow) res.getDimensionPixelSize(R.dimen.overview_actions_height)
+                if (hasSecondRow && hasClearAll) res.getDimensionPixelSize(R.dimen.overview_actions_height)
+                else if (hasSecondRow) res.getDimensionPixelSize(R.dimen.overview_actions_height_actions_only)
                 else if (hasClearAll) res.getDimensionPixelSize(R.dimen.overview_actions_height_single_row)
                 else 0
             } else {

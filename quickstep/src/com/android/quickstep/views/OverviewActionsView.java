@@ -402,12 +402,25 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         View splitButton = mSplitButton != null ? mSplitButton : findViewById(R.id.action_split);
         View lensButton = findViewById(R.id.action_lens);
 
-        boolean anyVisible =
-                (screenshotButton != null && screenshotButton.getVisibility() == VISIBLE)
-                        || (splitButton != null && splitButton.getVisibility() == VISIBLE)
-                        || (lensButton != null && lensButton.getVisibility() == VISIBLE);
+        boolean screenshotVisible =
+                screenshotButton != null && screenshotButton.getVisibility() == VISIBLE;
+        boolean splitVisible =
+                splitButton != null && splitButton.getVisibility() == VISIBLE;
+        boolean lensVisible =
+                lensButton != null && lensButton.getVisibility() == VISIBLE;
 
+        boolean anyVisible = screenshotVisible || splitVisible || lensVisible;
         row.setVisibility(anyVisible ? VISIBLE : GONE);
+
+        View splitSpace = findViewById(R.id.action_split_space);
+        if (splitSpace != null) {
+            splitSpace.setVisibility((splitVisible && screenshotVisible) ? VISIBLE : GONE);
+        }
+        View lensSpace = findViewById(R.id.action_lens_space);
+        if (lensSpace != null) {
+            lensSpace.setVisibility(
+                    (lensVisible && (screenshotVisible || splitVisible)) ? VISIBLE : GONE);
+        }
     }
 
     private void animateButtonPress(View view, @Nullable Runnable onPhase1Complete) {

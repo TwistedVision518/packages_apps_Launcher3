@@ -23,22 +23,19 @@
         android:id="@+id/action_buttons"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:layout_gravity="bottom|center_horizontal"
+        android:gravity="center_horizontal"
         android:orientation="vertical">
 
         <LinearLayout
             android:id="@+id/clear_all_container"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="52dp"
             android:layout_gravity="bottom|center_horizontal"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
             android:orientation="horizontal">
-
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
 
             <com.android.quickstep.views.OverviewClearAllButton
                 android:id="@+id/action_clear_all"
@@ -53,73 +50,75 @@
                 android:textSize="15sp"
                 android:visibility="gone" />
 
-            <Space
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
         </LinearLayout>
 
         <LinearLayout
         	android:id="@+id/second_overview_actions_container"
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
             android:layout_gravity="bottom|center_horizontal"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="8dp"
+            android:gravity="center"
             android:orientation="horizontal">
 
             <Space
                 android:id="@+id/action_screenshot_space"
-                android:layout_width="24dp"
+                android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:visibility="gone" />
 
-            <ImageButton
+            <com.android.quickstep.views.OverviewActionImageButton
                 android:id="@+id/action_screenshot"
                 style="@style/OverviewActionButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
                 android:src="@drawable/ic_screenshot"
-                android:tint="?android:attr/colorAccent"
-                android:background="@drawable/bg_overview_actions_button"
+                android:tint="?android:attr/textColorPrimary"
                 android:theme="@style/ThemeControlHighlightWorkspaceColor"
                 android:visibility="gone" />
 
             <Space
                 android:id="@+id/action_split_space"
-                android:layout_width="24dp"
+                android:layout_width="12dp"
                 android:layout_height="1dp"
                 android:visibility="gone" />
 
-            <ImageButton
+            <com.android.quickstep.views.OverviewActionImageButton
                 android:id="@+id/action_split"
                 style="@style/OverviewActionButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
+                android:tint="?android:attr/textColorPrimary"
                 android:theme="@style/ThemeControlHighlightWorkspaceColor"
                 android:visibility="gone" />
 
             <Space
                 android:id="@+id/action_lens_space"
-                android:layout_width="24dp"
+                android:layout_width="12dp"
                 android:layout_height="1dp"
                 android:visibility="gone" />
 
-            <ImageButton
+            <com.android.quickstep.views.OverviewActionImageButton
                 android:id="@+id/action_lens"
                 style="@style/OverviewActionButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
                 android:src="@drawable/ic_lens"
-                android:tint="?android:attr/colorAccent"
-                android:background="@drawable/bg_overview_actions_button"
+                android:tint="?android:attr/textColorPrimary"
                 android:theme="@style/ThemeControlHighlightWorkspaceColor"
                 android:visibility="gone" />
 
             <Space
                 android:id="@+id/end_space"
-                android:layout_width="24dp"
-                android:layout_height="1dp" />
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:visibility="gone" />
 
         </LinearLayout>
         
@@ -127,13 +126,14 @@
 
     <!-- Currently, the only "group action button" is this save app pair button. If more are added,
     a new LinearLayout may be needed to contain them, but beware of increased memory usage. -->
-    <ImageButton
+    <com.android.quickstep.views.OverviewActionImageButton
         android:id="@+id/action_save_app_pair"
         style="@style/OverviewActionButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:tint="?android:attr/colorAccent"
-        android:background="@drawable/bg_overview_actions_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:tint="?android:attr/textColorPrimary"
         android:theme="@style/ThemeControlHighlightWorkspaceColor"
         android:layout_gravity="bottom|center_horizontal"
         android:visibility="gone" />

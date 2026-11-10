@@ -151,5 +151,13 @@
             android:persistent="true"
             android:dependency="pref_recents_clear_all"
             launcher:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:key="pref_recents_actions_blur"
+            android:title="@string/recents_actions_blur_title"
+            android:summary="@string/recents_actions_blur_summary"
+            android:defaultValue="true"
+            android:persistent="true"
+            launcher:iconSpaceReserved="false" />
     </PreferenceCategory>
 </androidx.preference.PreferenceScreen>
