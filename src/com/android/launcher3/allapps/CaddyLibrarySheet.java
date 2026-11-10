@@ -128,7 +128,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
         setClipToPadding(false);
 
         mPanel = new PanelView(getContext());
-        mPanel.setClipChildren(false);
+        mPanel.setClipChildren(true);
         mPanel.setClipToPadding(false);
         addView(mPanel, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
@@ -265,7 +265,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
             }
         };
         mRecycler.setClipToPadding(false);
-        mRecycler.setClipChildren(false);
+        mRecycler.setClipChildren(true);
         mRecycler.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         mRecycler.setLayoutManager(editing ? new LinearLayoutManager(getContext())
                 : new GridLayoutManager(getContext(), initialSpan));
@@ -405,9 +405,6 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
         if (mRecycler == null || mPanel == null) {
             return;
         }
-        mPanel.setClipChildren(false);
-        mRecycler.setClipChildren(false);
-
         BaseDragLayer dragLayer = mActivityContext.getDragLayer();
         if (dragLayer == null) {
             return;
@@ -601,8 +598,6 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
         hideSourceView();
         applyAnimationProgress(1f);
         resetIconTransitions();
-        mPanel.setClipChildren(true);
-        mRecycler.setClipChildren(true);
         mPanel.requestFocus();
         announceAccessibilityChanges();
     }
@@ -977,7 +972,6 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
             if (bg != null) {
                 bg.setAlpha(Math.round(mBgAlpha * 255));
             }
-            setClipToOutline(mBgAlpha >= 0.99f);
             invalidate();
         }
 
@@ -988,7 +982,7 @@ public class CaddyLibrarySheet extends AbstractFloatingView implements DragContr
             setBackground(CaddyStyle.background(context, true));
             setClickable(true);
             setFocusableInTouchMode(true);
-            setClipToOutline(false);
+            setClipToOutline(true);
             setElevation(0f);
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
