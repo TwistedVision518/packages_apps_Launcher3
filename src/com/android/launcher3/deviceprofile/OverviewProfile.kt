@@ -21,6 +21,7 @@ import android.content.res.Resources
 import com.android.launcher3.Flags
 import com.android.launcher3.R
 import com.android.launcher3.LauncherPrefs
+import com.android.launcher3.Utilities
 import com.android.launcher3.util.OverviewReleaseFlags.enableOverviewIconMenu
 
 data class OverviewProfile(
@@ -44,6 +45,16 @@ data class OverviewProfile(
                 else res.getDimensionPixelSize(R.dimen.task_thumbnail_icon_size)
             val taskMarginPx = res.getDimensionPixelSize(R.dimen.overview_task_margin)
             val mIsNewStyle = LauncherPrefs.RECENTS_NEW_OVERVIEW_STYLE.get(context)
+            val hasSecondRow = mIsNewStyle && (LauncherPrefs.RECENTS_SCREENSHOT.get(context)
+                    || (LauncherPrefs.RECENTS_LENS.get(context) && Utilities.isGSAEnabled(context)))
+            val hasClearAll = LauncherPrefs.RECENTS_CLEAR_ALL.get(context)
+            val actionsHeight = if (mIsNewStyle) {
+                if (hasSecondRow) res.getDimensionPixelSize(R.dimen.overview_actions_height)
+                else if (hasClearAll) res.getDimensionPixelSize(R.dimen.overview_actions_height_single_row)
+                else 0
+            } else {
+                res.getDimensionPixelSize(R.dimen.overview_actions_height_legacy)
+            }
             return OverviewProfile(
                 taskMarginPx = taskMarginPx,
                 taskIconSizePx = taskIconSizePx,
@@ -61,7 +72,7 @@ data class OverviewProfile(
                         else R.dimen.overview_actions_top_margin_legacy
                     ),
                 pageSpacing = res.getDimensionPixelSize(R.dimen.overview_page_spacing),
-                actionsHeight = res.getDimensionPixelSize(R.dimen.overview_actions_height),
+                actionsHeight = actionsHeight,
                 rowSpacing = res.getDimensionPixelSize(R.dimen.overview_grid_row_spacing),
                 gridSideMargin = res.getDimensionPixelSize(R.dimen.overview_grid_side_margin),
             )
