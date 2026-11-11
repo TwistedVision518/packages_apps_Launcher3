@@ -2574,19 +2574,44 @@ public class Launcher extends StatefulActivity<LauncherState>
                 packageAndUserAndApp, forFolderMatch(packageAndUserAndApp));
 
         if (!(target instanceof FolderIcon folderIcon)) {
-            return target;
-        }
-
-        View previewItem =
-                folderIcon.getPreviewItemLaunchSourceForAppClose(
-                        preferredItem);
-        if (previewItem == null) {
-            previewItem =
+            if (target != null) {
+                return target;
+            }
+        } else {
+            View previewItem =
                     folderIcon.getPreviewItemLaunchSourceForAppClose(
-                            packageAndUserAndApp);
+                            preferredItem);
+            if (previewItem == null) {
+                previewItem =
+                        folderIcon.getPreviewItemLaunchSourceForAppClose(
+                                packageAndUserAndApp);
+            }
+            if (previewItem != null) {
+                return previewItem;
+            }
+            if (target != null) {
+                return target;
+            }
         }
 
-        return previewItem != null ? previewItem : target;
+        if (mHotseat != null && isSearchPackageForQsb(packageName)) {
+            View qsb = mHotseat.getQsbForAppClose();
+            if (qsb != null && qsb.isAttachedToWindow() && qsb.isShown()) {
+                return qsb;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isSearchPackageForQsb(String packageName) {
+        if (packageName == null) return false;
+        if (Utilities.GSA_PACKAGE.equals(packageName)
+                || Utilities.GEMINI_PACKAGE.equals(packageName)) {
+            return true;
+        }
+        String searchWidgetPackage = com.android.launcher3.qsb.QsbContainerView.getSearchWidgetPackageName(this);
+        return packageName.equals(searchWidgetPackage);
     }
 
     private ValueAnimator createNewAppBounceAnimation(View v, int i) {

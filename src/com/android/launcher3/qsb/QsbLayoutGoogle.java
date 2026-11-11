@@ -1,11 +1,20 @@
 package com.android.launcher3.qsb;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.Keyframe;
+import android.animation.ObjectAnimator;
+import android.animation.PropertyValuesHolder;
+import android.animation.ValueAnimator;
+import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Bundle;
+import android.os.Process;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
@@ -13,17 +22,29 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import com.android.app.animation.Interpolators;
 import com.android.launcher3.LauncherPrefs;
+import com.android.launcher3.LauncherSettings;
 import com.android.launcher3.R;
 import com.android.launcher3.Reorderable;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.graphics.ThemeManager;
+import com.android.launcher3.model.data.ItemInfo;
+import com.android.launcher3.model.data.WorkspaceItemInfo;
 import com.android.launcher3.util.MultiTranslateDelegate;
+import com.android.launcher3.views.ActivityContext;
+import com.android.launcher3.views.FloatingIconViewCompanion;
 
 public class QsbLayoutGoogle extends FrameLayout
-        implements Reorderable, SharedPreferences.OnSharedPreferenceChangeListener {
+        implements Reorderable, FloatingIconViewCompanion,
+        SharedPreferences.OnSharedPreferenceChangeListener {
 
     private static final String TAG = "QsbLayoutGoogle";
+
+    private static final long SQUISH_DURATION_MS = 400L;
+    private static final float LANDING_SQUISH_INTENSITY = 0.55f;
+    private boolean mLandingSquish;
+    private static final long ACTION_LAUNCH_DELAY_MS = 120L;
 
     private ImageView mMicIcon;
     private ImageView mGoogleIcon;
@@ -34,6 +55,11 @@ public class QsbLayoutGoogle extends FrameLayout
     private final MultiTranslateDelegate mTranslateDelegate = new MultiTranslateDelegate(this);
     private float mScaleForReorderBounce = 1f;
     private ThemeManager.ThemeChangeListener mThemeChangeListener;
+
+    private ObjectAnimator mSquishAnimator;
+    private View mSquishingView;
+    private boolean mIsLaunching;
+    private final Runnable mResetLaunchingRunnable = () -> mIsLaunching = false;
 
     public QsbLayoutGoogle(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -54,6 +80,9 @@ public class QsbLayoutGoogle extends FrameLayout
         mLensIcon = findViewById(R.id.lens_icon);
         mAiModeButton = findViewById(R.id.ai_mode_button);
 
+        setTag(createQsbItemInfo(new Intent("android.search.action.GLOBAL_SEARCH")
+                .setPackage(Utilities.GSA_PACKAGE)));
+
         setIcons();
         setupMicIcon();
         setupLensIcon();
@@ -65,7 +94,10 @@ public class QsbLayoutGoogle extends FrameLayout
 
         String searchPackage = QsbContainerView.getSearchWidgetPackageName(mContext);
         if (searchPackage != null) {
-            setOnClickListener(v -> launchSearchActivity(searchPackage));
+            setOnClickListener(v -> {
+                View target = getParent() instanceof View ? (View) getParent() : this;
+                handleClickWithSquish(target, () -> launchSearchActivity(target, searchPackage));
+            });
         }
 
         post(() -> {
@@ -90,7 +122,14 @@ public class QsbLayoutGoogle extends FrameLayout
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        cancelSquishAnimation();
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
+        cancelSquishAnimation();
         super.onDetachedFromWindow();
         if (mThemeChangeListener != null) {
             ThemeManager.INSTANCE.get(mContext).removeChangeListener(mThemeChangeListener);
@@ -101,6 +140,22 @@ public class QsbLayoutGoogle extends FrameLayout
         if (mMicIcon != null) mMicIcon.setOnClickListener(null);
         if (mLensIcon != null) mLensIcon.setOnClickListener(null);
         if (mAiModeButton != null) mAiModeButton.setOnClickListener(null);
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility != VISIBLE) {
+            cancelSquishAnimation();
+        }
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (!isVisible) {
+            cancelSquishAnimation();
+        }
     }
 
     @Override
@@ -143,22 +198,31 @@ public class QsbLayoutGoogle extends FrameLayout
 
     private void setupMicIcon() {
         if (mMicIcon == null) return;
-        mMicIcon.setOnClickListener(view -> {
-            try {
-                Intent intent = new Intent();
-                if (Utilities.isMusicSearchEnabled(view.getContext())) {
-                    intent.setAction("com.google.android.googlequicksearchbox.MUSIC_SEARCH");
-                    intent.setPackage(QsbContainerView.getSearchWidgetPackageName(view.getContext()));
-                } else {
-                    intent.setAction("android.intent.action.VOICE_COMMAND");
-                }
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                view.getContext().startActivity(intent);
-            } catch (Exception e) {
-                mMicIcon.setVisibility(View.GONE);
-                Log.e(TAG, "Mic icon launch failed", e);
+        mMicIcon.setOnClickListener(view -> handleClickWithSquish(mMicIcon, () -> {
+            if (Utilities.isMusicSearchEnabled(mContext)) {
+                launchAiMusicSearch(mMicIcon);
+                return;
             }
-        });
+
+            Intent intent = new Intent(Intent.ACTION_VOICE_COMMAND);
+            try {
+                startActivitySafely(mMicIcon, intent);
+            } catch (ActivityNotFoundException e) {
+                try {
+                    String searchPackage = QsbContainerView.getSearchWidgetPackageName(mContext);
+                    if (searchPackage != null) {
+                        Intent gsaVoice = new Intent(Intent.ACTION_VOICE_COMMAND).setPackage(searchPackage);
+                        startActivitySafely(mMicIcon, gsaVoice);
+                    } else {
+                        Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception ex) {
+                    Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
+                }
+            } catch (SecurityException e) {
+                Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
+            }
+        }));
     }
 
     private void setupLensIcon() {
@@ -168,45 +232,61 @@ public class QsbLayoutGoogle extends FrameLayout
             return;
         }
         mLensIcon.setVisibility(View.VISIBLE);
-        mLensIcon.setOnClickListener(v -> {
+        mLensIcon.setOnClickListener(v -> handleClickWithSquish(mLensIcon, () -> {
             try {
-                mContext.startActivity(new Intent(Intent.ACTION_VIEW)
-                        .setComponent(new ComponentName(
-                                Utilities.GSA_PACKAGE, Utilities.LENS_ACTIVITY))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        .setData(Uri.parse(Utilities.LENS_URI))
-                        .putExtra("LensHomescreenShortcut", true));
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setComponent(new ComponentName(
+                        Utilities.GSA_PACKAGE, Utilities.LENS_ACTIVITY));
+                intent.setData(Uri.parse(Utilities.LENS_URI));
+                intent.putExtra("LensHomescreenShortcut", true);
+                startActivitySafely(mLensIcon, intent);
             } catch (Exception e) {
-                mLensIcon.setVisibility(View.GONE);
-                Log.e(TAG, "Lens launch failed", e);
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(Utilities.LENS_URI));
+                    intent.setPackage(Utilities.GSA_PACKAGE);
+                    intent.putExtra("LensHomescreenShortcut", true);
+                    startActivitySafely(mLensIcon, intent);
+                } catch (Exception ex) {
+                    mLensIcon.setVisibility(View.GONE);
+                    Log.e(TAG, "Lens launch failed", ex);
+                }
             }
-        });
+        }));
     }
 
-    private void launchSearchActivity(String searchPackage) {
+    private void launchSearchActivity(View view, String searchPackage) {
         try {
-            mContext.startActivity(new Intent("android.search.action.GLOBAL_SEARCH")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    .setPackage(searchPackage));
+            Intent intent = new Intent("android.search.action.GLOBAL_SEARCH")
+                    .setPackage(searchPackage);
+            startActivitySafely(view, intent);
             return;
         } catch (ActivityNotFoundException e) {
             Log.d(TAG, "GLOBAL_SEARCH not found for " + searchPackage);
         }
+
         try {
             Intent intent = mContext.getPackageManager().getLaunchIntentForPackage(searchPackage);
             if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                mContext.startActivity(intent);
+                startActivitySafely(view, intent);
                 return;
             }
         } catch (ActivityNotFoundException e) {
             Log.d(TAG, "Launch intent not found for " + searchPackage);
         }
+
         try {
-            mContext.startActivity(new Intent(Intent.ACTION_VIEW)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    .setPackage(searchPackage));
+            Intent intent = new Intent(Intent.ACTION_WEB_SEARCH)
+                    .setPackage(searchPackage);
+            startActivitySafely(view, intent);
+            return;
         } catch (ActivityNotFoundException e) {
+            Log.d(TAG, "ACTION_WEB_SEARCH not found for " + searchPackage);
+        }
+
+        try {
+            Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"));
+            startActivitySafely(view, fallback);
+        } catch (Exception e) {
             Toast.makeText(mContext, R.string.activity_not_found, Toast.LENGTH_SHORT).show();
             Log.e(TAG, "No search activity found for: " + searchPackage);
         }
@@ -214,13 +294,13 @@ public class QsbLayoutGoogle extends FrameLayout
 
     private void setupAiModeButton() {
         if (mAiModeButton == null) return;
-        mAiModeButton.setOnClickListener(v -> {
+        mAiModeButton.setOnClickListener(v -> handleClickWithSquish(mAiModeButton, () -> {
             if (LauncherPrefs.DOCK_UNIVERSAL_SEARCH.get(mContext)) {
                 UniversalSearchLauncher.launch(mContext);
                 return;
             }
             if (Utilities.isAiMusicSearchEnabled(mContext)) {
-                launchAiMusicSearch();
+                launchAiMusicSearch(mAiModeButton);
                 return;
             }
 
@@ -236,9 +316,8 @@ public class QsbLayoutGoogle extends FrameLayout
             for (String activityName : aiActivities) {
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW)
-                            .setComponent(new ComponentName(Utilities.GSA_PACKAGE, activityName))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    mContext.startActivity(intent);
+                            .setComponent(new ComponentName(Utilities.GSA_PACKAGE, activityName));
+                    startActivitySafely(mAiModeButton, intent);
                     Log.d(TAG, "Successfully launched AI activity: " + activityName);
                     return;
                 } catch (ActivityNotFoundException e) {
@@ -257,9 +336,8 @@ public class QsbLayoutGoogle extends FrameLayout
             for (String intentAction : aiIntents) {
                 try {
                     Intent intent = new Intent(intentAction)
-                            .setPackage(Utilities.GSA_PACKAGE)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                    mContext.startActivity(intent);
+                            .setPackage(Utilities.GSA_PACKAGE);
+                    startActivitySafely(mAiModeButton, intent);
                     Log.d(TAG, "Launched via intent action: " + intentAction);
                     return;
                 } catch (ActivityNotFoundException e) {
@@ -273,24 +351,20 @@ public class QsbLayoutGoogle extends FrameLayout
             if (searchPackage != null) {
                 try {
                     Intent intent = new Intent(Intent.ACTION_VOICE_COMMAND)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
                             .setPackage(searchPackage);
-                    mContext.startActivity(intent);
+                    startActivitySafely(mAiModeButton, intent);
                     Log.d(TAG, "Falling back to voice command");
-                } catch (ActivityNotFoundException e) {
+                } catch (Exception e) {
                     Log.e(TAG, "No AI or voice activities found");
-                    Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
-                } catch (SecurityException e) {
-                    Log.e(TAG, "Security exception: " + e.getMessage());
                     Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
                 }
             } else {
                 Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
             }
-        });
+        }));
     }
 
-    private void launchAiMusicSearch() {
+    private void launchAiMusicSearch(View view) {
         String searchPackage = QsbContainerView.getSearchWidgetPackageName(mContext);
         if (searchPackage == null) {
             Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
@@ -299,26 +373,187 @@ public class QsbLayoutGoogle extends FrameLayout
         try {
             Intent intent = new Intent(Intent.ACTION_MAIN)
                     .setAction("com.google.android.googlequicksearchbox.MUSIC_SEARCH")
-                    .setPackage(searchPackage)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            mContext.startActivity(intent);
+                    .setPackage(searchPackage);
+            startActivitySafely(view, intent);
             Log.d(TAG, "Successfully launched AI music search");
         } catch (ActivityNotFoundException e) {
             Log.d(TAG, "Music search not found, falling back to voice command");
             try {
                 Intent intent = new Intent(Intent.ACTION_VOICE_COMMAND)
-                        .setPackage(searchPackage)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                mContext.startActivity(intent);
-            } catch (ActivityNotFoundException e2) {
-                Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
-            } catch (SecurityException e2) {
+                        .setPackage(searchPackage);
+                startActivitySafely(view, intent);
+            } catch (Exception e2) {
                 Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
             }
         } catch (SecurityException e) {
             Toast.makeText(mContext, R.string.ai_mode_not_available, Toast.LENGTH_SHORT).show();
         }
     }
+
+    private void handleClickWithSquish(View target, Runnable action) {
+        if (mIsLaunching || !isAttachedToWindow() || !isShown()) return;
+        mIsLaunching = true;
+
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            try {
+                action.run();
+            } finally {
+                postDelayed(mResetLaunchingRunnable, 300);
+            }
+            return;
+        }
+
+        playSquishAnimation(target);
+        postDelayed(() -> {
+            if (!isAttachedToWindow() || !isShown() || getWindowVisibility() != VISIBLE) {
+                cancelSquishAnimation();
+                return;
+            }
+            try {
+                action.run();
+            } finally {
+                if (isAttachedToWindow() && isShown()) {
+                    postDelayed(mResetLaunchingRunnable, 300);
+                } else {
+                    mIsLaunching = false;
+                }
+            }
+        }, (long) (ACTION_LAUNCH_DELAY_MS * ValueAnimator.getDurationScale()));
+    }
+
+    /** Gentler squish played when the app-close animation lands on the search bar. */
+    public void playLandingSquishAnimation() {
+        mLandingSquish = true;
+        playSquishAnimation();
+    }
+
+    public void playSquishAnimation() {
+        mIsLaunching = false;
+        playSquishAnimation(this);
+    }
+
+    private void playSquishAnimation(View target) {
+        if (target == null) return;
+        final float k = mLandingSquish ? LANDING_SQUISH_INTENSITY : 1f;
+        mLandingSquish = false;
+
+        if (mSquishAnimator != null) {
+            mSquishAnimator.cancel();
+        }
+
+        mSquishingView = target;
+        target.setScaleX(1f);
+        target.setScaleY(1f);
+        if (target.getWidth() > 0 && target.getHeight() > 0) {
+            target.setPivotX(target.getWidth() / 2f);
+            target.setPivotY(target.getHeight() / 2f);
+        }
+
+        Keyframe kf0X = Keyframe.ofFloat(0f, 1f);
+        Keyframe kf1X = Keyframe.ofFloat(120f / 400f, 1f + 0.066f * k);
+        kf1X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        Keyframe kf2X = Keyframe.ofFloat(260f / 400f, 1f - 0.033f * k);
+        kf2X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        Keyframe kf3X = Keyframe.ofFloat(1f, 1f);
+        kf3X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        PropertyValuesHolder pvhScaleX = PropertyValuesHolder.ofKeyframe(
+                View.SCALE_X, kf0X, kf1X, kf2X, kf3X);
+
+        Keyframe kf0Y = Keyframe.ofFloat(0f, 1f);
+        Keyframe kf1Y = Keyframe.ofFloat(120f / 400f, 1f - 0.055f * k);
+        kf1Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        Keyframe kf2Y = Keyframe.ofFloat(260f / 400f, 1f + 0.033f * k);
+        kf2Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        Keyframe kf3Y = Keyframe.ofFloat(1f, 1f);
+        kf3Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
+        PropertyValuesHolder pvhScaleY = PropertyValuesHolder.ofKeyframe(
+                View.SCALE_Y, kf0Y, kf1Y, kf2Y, kf3Y);
+
+        mSquishAnimator = ObjectAnimator.ofPropertyValuesHolder(target, pvhScaleX, pvhScaleY);
+        mSquishAnimator.setDuration(SQUISH_DURATION_MS);
+        mSquishAnimator.setInterpolator(Interpolators.LINEAR);
+        mSquishAnimator.addUpdateListener(anim -> {
+            target.invalidate();
+            invalidate();
+            if (target.getParent() instanceof View parent) {
+                parent.invalidate();
+            }
+        });
+        mSquishAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                resetSquishState();
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                resetSquishState();
+            }
+        });
+        mSquishAnimator.start();
+    }
+
+    private void resetSquishState() {
+        if (mSquishingView != null) {
+            mSquishingView.setScaleX(1f);
+            mSquishingView.setScaleY(1f);
+            mSquishingView.invalidate();
+            mSquishingView = null;
+        }
+        mSquishAnimator = null;
+        invalidate();
+    }
+
+    private void cancelSquishAnimation() {
+        if (mSquishAnimator != null) {
+            mSquishAnimator.cancel();
+        }
+        resetSquishState();
+        mIsLaunching = false;
+    }
+
+    private ItemInfo createQsbItemInfo(Intent intent) {
+        WorkspaceItemInfo info = new WorkspaceItemInfo();
+        Intent launchIntent = intent != null ? new Intent(intent) : new Intent();
+        if (launchIntent.getComponent() == null && launchIntent.getPackage() != null) {
+            launchIntent.setComponent(new ComponentName(launchIntent.getPackage(), ""));
+        }
+        info.intent = launchIntent;
+        info.id = R.id.search_container_hotseat;
+        info.container = LauncherSettings.Favorites.CONTAINER_HOTSEAT;
+        info.itemType = LauncherSettings.Favorites.ITEM_TYPE_APPLICATION;
+        info.user = Process.myUserHandle();
+        return info;
+    }
+
+    private void startActivitySafely(View view, Intent intent) {
+        if (intent == null) return;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (view != null) {
+            intent.setSourceBounds(Utilities.getViewBounds(view));
+        }
+        ActivityContext activityContext = ActivityContext.lookupContext(mContext);
+        if (activityContext != null) {
+            activityContext.startActivitySafely(view, intent, createQsbItemInfo(intent));
+        } else {
+            Bundle opts = null;
+            if (view != null) {
+                try {
+                    opts = ActivityOptions.makeScaleUpAnimation(
+                            view, 0, 0, view.getWidth(), view.getHeight()).toBundle();
+                } catch (Exception ignored) {}
+            }
+            mContext.startActivity(intent, opts);
+        }
+    }
+
+    @Override
+    public void setIconVisible(boolean visible) {
+        // Keep search bar visible during window transitions so it does not flicker or pop
+    }
+
+    @Override
+    public void setForceHideDot(boolean hide) {}
 
     @Override public MultiTranslateDelegate getTranslateDelegate() { return mTranslateDelegate; }
 

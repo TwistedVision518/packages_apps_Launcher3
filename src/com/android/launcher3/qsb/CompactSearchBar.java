@@ -6,6 +6,7 @@ import android.animation.Keyframe;
 import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.animation.ValueAnimator;
+import android.app.ActivityOptions;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
@@ -20,6 +21,8 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.PaintDrawable;
 import android.net.Uri;
+import android.os.Bundle;
+import android.os.Process;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.CrossWindowBlurListeners;
@@ -32,17 +35,23 @@ import android.widget.Toast;
 import com.android.app.animation.Interpolators;
 import com.android.axion.blur.ui.view.AxViewBackdropBlur;
 import com.android.launcher3.LauncherPrefs;
+import com.android.launcher3.LauncherSettings;
 import com.android.launcher3.R;
 import com.android.launcher3.Reorderable;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.graphics.ThemeManager;
+import com.android.launcher3.model.data.ItemInfo;
+import com.android.launcher3.model.data.WorkspaceItemInfo;
 import com.android.launcher3.util.MultiTranslateDelegate;
 import com.android.launcher3.util.Themes;
+import com.android.launcher3.views.ActivityContext;
+import com.android.launcher3.views.FloatingIconViewCompanion;
 
 import java.util.function.Consumer;
 
 public class CompactSearchBar extends FrameLayout
-        implements Reorderable, SharedPreferences.OnSharedPreferenceChangeListener {
+        implements Reorderable, FloatingIconViewCompanion,
+        SharedPreferences.OnSharedPreferenceChangeListener {
 
     private static final String TAG = "CompactSearchBar";
     private static final String ACTION_GOOGLE_SEARCH = "google_search";
@@ -52,6 +61,8 @@ public class CompactSearchBar extends FrameLayout
     private static final String ACTION_UNIVERSAL_SEARCH = "universal_search";
 
     private static final long SQUISH_DURATION_MS = 400L;
+    private static final float LANDING_SQUISH_INTENSITY = 0.55f;
+    private boolean mLandingSquish;
     private static final long ACTION_LAUNCH_DELAY_MS = 120L;
 
     private final MultiTranslateDelegate mTranslateDelegate = new MultiTranslateDelegate(this);
@@ -96,6 +107,13 @@ public class CompactSearchBar extends FrameLayout
         mActionIcon = findViewById(R.id.gemini_icon);
         mActionText = findViewById(R.id.compact_search_bar_text);
         mInner = findViewById(R.id.compact_search_bar_inner);
+
+        ItemInfo qsbInfo = createQsbItemInfo(new Intent("android.search.action.GLOBAL_SEARCH")
+                .setPackage(Utilities.GSA_PACKAGE));
+        setTag(qsbInfo);
+        if (mInner != null) {
+            mInner.setTag(qsbInfo);
+        }
 
         updateBlurPreferences();
         setIcon();
@@ -424,7 +442,16 @@ public class CompactSearchBar extends FrameLayout
         mIsLaunching = false;
     }
 
-    private void playSquishAnimation() {
+    /** Gentler squish played when the app-close animation lands on the search bar. */
+    public void playLandingSquishAnimation() {
+        mLandingSquish = true;
+        playSquishAnimation();
+    }
+
+    public void playSquishAnimation() {
+        mIsLaunching = false;
+        final float k = mLandingSquish ? LANDING_SQUISH_INTENSITY : 1f;
+        mLandingSquish = false;
         if (mInner == null) return;
 
         if (mSquishAnimator != null) {
@@ -439,9 +466,9 @@ public class CompactSearchBar extends FrameLayout
         }
 
         Keyframe kf0X = Keyframe.ofFloat(0f, 1f);
-        Keyframe kf1X = Keyframe.ofFloat(120f / 400f, 1.066f);
+        Keyframe kf1X = Keyframe.ofFloat(120f / 400f, 1f + 0.066f * k);
         kf1X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
-        Keyframe kf2X = Keyframe.ofFloat(260f / 400f, 0.967f);
+        Keyframe kf2X = Keyframe.ofFloat(260f / 400f, 1f - 0.033f * k);
         kf2X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
         Keyframe kf3X = Keyframe.ofFloat(1f, 1f);
         kf3X.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
@@ -449,9 +476,9 @@ public class CompactSearchBar extends FrameLayout
                 View.SCALE_X, kf0X, kf1X, kf2X, kf3X);
 
         Keyframe kf0Y = Keyframe.ofFloat(0f, 1f);
-        Keyframe kf1Y = Keyframe.ofFloat(120f / 400f, 0.945f);
+        Keyframe kf1Y = Keyframe.ofFloat(120f / 400f, 1f - 0.055f * k);
         kf1Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
-        Keyframe kf2Y = Keyframe.ofFloat(260f / 400f, 1.033f);
+        Keyframe kf2Y = Keyframe.ofFloat(260f / 400f, 1f + 0.033f * k);
         kf2Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
         Keyframe kf3Y = Keyframe.ofFloat(1f, 1f);
         kf3Y.setInterpolator(Interpolators.FAST_OUT_SLOW_IN);
@@ -485,6 +512,41 @@ public class CompactSearchBar extends FrameLayout
         invalidate();
     }
 
+    private ItemInfo createQsbItemInfo(Intent intent) {
+        WorkspaceItemInfo info = new WorkspaceItemInfo();
+        Intent launchIntent = intent != null ? new Intent(intent) : new Intent();
+        if (launchIntent.getComponent() == null && launchIntent.getPackage() != null) {
+            launchIntent.setComponent(new ComponentName(launchIntent.getPackage(), ""));
+        }
+        info.intent = launchIntent;
+        info.id = R.id.search_container_hotseat;
+        info.container = LauncherSettings.Favorites.CONTAINER_HOTSEAT;
+        info.itemType = LauncherSettings.Favorites.ITEM_TYPE_APPLICATION;
+        info.user = Process.myUserHandle();
+        return info;
+    }
+
+    private void startActivitySafely(View view, Intent intent) {
+        if (intent == null) return;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (view != null) {
+            intent.setSourceBounds(Utilities.getViewBounds(view));
+        }
+        ActivityContext activityContext = ActivityContext.lookupContext(mContext);
+        if (activityContext != null) {
+            activityContext.startActivitySafely(view, intent, createQsbItemInfo(intent));
+        } else {
+            Bundle opts = null;
+            if (view != null) {
+                try {
+                    opts = ActivityOptions.makeScaleUpAnimation(
+                            view, 0, 0, view.getWidth(), view.getHeight()).toBundle();
+                } catch (Exception ignored) {}
+            }
+            mContext.startActivity(intent, opts);
+        }
+    }
+
     private void launchAction() {
         switch (getAction()) {
             case ACTION_LENS:
@@ -513,10 +575,11 @@ public class CompactSearchBar extends FrameLayout
             return;
         }
 
+        View target = mInner != null ? mInner : this;
         try {
-            mContext.startActivity(new Intent("android.search.action.GLOBAL_SEARCH")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    .setPackage(searchPackage));
+            Intent intent = new Intent("android.search.action.GLOBAL_SEARCH")
+                    .setPackage(searchPackage);
+            startActivitySafely(target, intent);
             return;
         } catch (ActivityNotFoundException e) {
             Log.d(TAG, "GLOBAL_SEARCH not found for " + searchPackage);
@@ -525,8 +588,7 @@ public class CompactSearchBar extends FrameLayout
         try {
             Intent intent = mContext.getPackageManager().getLaunchIntentForPackage(searchPackage);
             if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                mContext.startActivity(intent);
+                startActivitySafely(target, intent);
                 return;
             }
         } catch (ActivityNotFoundException e) {
@@ -537,12 +599,13 @@ public class CompactSearchBar extends FrameLayout
     }
 
     private void launchLens() {
+        View target = mInner != null ? mInner : this;
         try {
-            mContext.startActivity(new Intent(Intent.ACTION_VIEW)
+            Intent intent = new Intent(Intent.ACTION_VIEW)
                     .setComponent(new ComponentName(Utilities.GSA_PACKAGE, Utilities.LENS_ACTIVITY))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     .setData(Uri.parse(Utilities.LENS_URI))
-                    .putExtra("LensHomescreenShortcut", true));
+                    .putExtra("LensHomescreenShortcut", true);
+            startActivitySafely(target, intent);
         } catch (Exception e) {
             Log.e(TAG, "Lens launch failed", e);
             Toast.makeText(mContext, R.string.activity_not_found, Toast.LENGTH_SHORT).show();
@@ -550,6 +613,7 @@ public class CompactSearchBar extends FrameLayout
     }
 
     private void launchMicOrMusicSearch() {
+        View target = mInner != null ? mInner : this;
         try {
             Intent intent = new Intent();
             if (Utilities.isMusicSearchEnabled(mContext)) {
@@ -558,8 +622,7 @@ public class CompactSearchBar extends FrameLayout
             } else {
                 intent.setAction("android.intent.action.VOICE_COMMAND");
             }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            mContext.startActivity(intent);
+            startActivitySafely(target, intent);
         } catch (Exception e) {
             Log.e(TAG, "Mic launch failed", e);
             Toast.makeText(mContext, R.string.activity_not_found, Toast.LENGTH_SHORT).show();
@@ -567,12 +630,12 @@ public class CompactSearchBar extends FrameLayout
     }
 
     private void launchGemini() {
+        View target = mInner != null ? mInner : this;
         try {
             Intent intent = mContext.getPackageManager().getLaunchIntentForPackage(
                     Utilities.GEMINI_PACKAGE);
             if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                mContext.startActivity(intent);
+                startActivitySafely(target, intent);
                 return;
             }
         } catch (Exception e) {
@@ -580,6 +643,14 @@ public class CompactSearchBar extends FrameLayout
         }
         Toast.makeText(mContext, R.string.activity_not_found, Toast.LENGTH_SHORT).show();
     }
+
+    @Override
+    public void setIconVisible(boolean visible) {
+        // Keep search bar visible during window transitions so it does not flicker or pop
+    }
+
+    @Override
+    public void setForceHideDot(boolean hide) {}
 
     @Override
     public MultiTranslateDelegate getTranslateDelegate() {
