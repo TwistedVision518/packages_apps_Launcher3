@@ -283,10 +283,10 @@ public class SettingsHomescreen extends ComposeSettingsActivity
                     .isCustomWidgetEnabled(getContext());
             setQsbPrefEnabled(LauncherPrefs.QSB_STYLE_GOOGLE.getSharedPrefKey(),
                     !isCompact && !customWidget);
+            setQsbPrefEnabled(LauncherPrefs.SEARCH_BAR_BLUR.getSharedPrefKey(),
+                    isDockSearch && !customWidget);
             setQsbPrefEnabled(LauncherPrefs.DOCK_SEARCH_WIDGET.getSharedPrefKey(),
                     !isCompact);
-            setQsbPrefEnabled(LauncherPrefs.COMPACT_SEARCH_BAR_BLUR.getSharedPrefKey(),
-                    isDockSearch && isCompact);
             setQsbPrefEnabled(LauncherPrefs.COMPACT_SEARCH_BAR_ACTION.getSharedPrefKey(),
                     isDockSearch && isCompact);
             setQsbPrefEnabled(LauncherPrefs.DOCK_UNIVERSAL_SEARCH.getSharedPrefKey(),

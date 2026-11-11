@@ -21,11 +21,34 @@ public class QsbOuterDrawable extends Drawable {
     private final RectF mRect;
     private final Context mContext;
     private int mOpacity = 70;
+    private boolean mBlurActive = false;
 
     public QsbOuterDrawable(Context context) {
         mContext = context;
         mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         mRect = new RectF();
+    }
+
+    public void setBlurActive(boolean blurActive) {
+        if (mBlurActive != blurActive) {
+            mBlurActive = blurActive;
+            invalidateSelf();
+        }
+    }
+
+    public boolean isBlurActive() {
+        return mBlurActive;
+    }
+
+    public void setOpacity(int opacity) {
+        if (mOpacity != opacity) {
+            mOpacity = opacity;
+            invalidateSelf();
+        }
+    }
+
+    public int getOpacityPercent() {
+        return mOpacity;
     }
 
     @Override
@@ -36,8 +59,9 @@ public class QsbOuterDrawable extends Drawable {
         // Get the themed color for outer shape
         int themedColor = Themes.getAttrColor(mContext, com.android.launcher3.R.attr.qsbOuterColor);
         
-        // Apply opacity to outer shape only
-        int alpha = (int) (mOpacity * 255 / 100);
+        // Apply opacity to outer shape only (slightly reduced when blur is active for frosted glass look)
+        int effectiveOpacity = mBlurActive ? Math.min(mOpacity, 60) : mOpacity;
+        int alpha = (int) (effectiveOpacity * 255 / 100);
         int outerColorWithAlpha = (themedColor & 0x00FFFFFF) | (alpha << 24);
         
         mPaint.setColor(outerColorWithAlpha);

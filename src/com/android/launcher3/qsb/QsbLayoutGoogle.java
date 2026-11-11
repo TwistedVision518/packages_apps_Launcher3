@@ -102,7 +102,7 @@ public class QsbLayoutGoogle extends FrameLayout
 
         post(() -> {
             View parent = (View) getParent();
-            if (parent != null) {
+            if (parent != null && parent.getBackground() == null) {
                 parent.setBackground(new QsbOuterDrawable(mContext));
             }
         });
@@ -429,10 +429,11 @@ public class QsbLayoutGoogle extends FrameLayout
 
     public void playSquishAnimation() {
         mIsLaunching = false;
-        playSquishAnimation(this);
+        View target = getParent() instanceof View ? (View) getParent() : this;
+        playSquishAnimation(target);
     }
 
-    private void playSquishAnimation(View target) {
+    public void playSquishAnimation(View target) {
         if (target == null) return;
         final float k = mLandingSquish ? LANDING_SQUISH_INTENSITY : 1f;
         mLandingSquish = false;
