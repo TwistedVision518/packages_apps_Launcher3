@@ -85,6 +85,7 @@ import com.android.launcher3.R;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.allapps.BaseAllAppsAdapter.AdapterItem;
 import com.android.launcher3.allapps.search.AllAppsSearchUiDelegate;
+import com.android.launcher3.allapps.search.AppsSearchContainerLayout;
 import com.android.launcher3.allapps.search.SearchAdapterProvider;
 import com.android.launcher3.config.FeatureFlags;
 import com.android.launcher3.keyboard.FocusedItemDecorator;
@@ -428,10 +429,15 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
             return;
         }
         mUniversalSearchActive = active;
+        if (mSearchContainer instanceof AppsSearchContainerLayout) {
+            ((AppsSearchContainerLayout) mSearchContainer).setUniversalSearch(active);
+        }
         rebindAdapters(true);
         if (active) {
             // Hide the app grid before the container is shown, without waiting for results.
             animateToSearchState(true, 0);
+        } else if (isSearching()) {
+            animateToSearchState(false);
         }
     }
 
@@ -445,7 +451,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     /** Invoke when the current search session is finished. */
     public void onClearSearchResult() {
         getMainAdapterProvider().clearHighlightedItem();
-        mUniversalSearchActive = false;
+        setUniversalSearchActive(false);
         animateToSearchState(false);
         rebindAdapters(true);
     }
@@ -593,6 +599,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         // Reset the base recycler view after transitioning home.
         updateHeaderScroll(0);
         if (exitSearch) {
+            setUniversalSearchActive(false);
             // Reset the search bar and search RV after transitioning home.
             MAIN_EXECUTOR.getHandler().post(mSearchUiManager::resetSearch);
         }

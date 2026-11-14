@@ -96,6 +96,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     private int mTouchAction = ACTION_NONE;
     private boolean mTouchActionCancelled;
     private boolean mUsePillSearchBar;
+    private boolean mIsUniversalSearch;
     private boolean mShowGoogleSearchActions;
     private boolean mHasGoogleApp;
 
@@ -189,6 +190,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         LauncherPrefs.getPrefs(getContext()).registerOnSharedPreferenceChangeListener(
                 mPreferenceListener);
         if (mAppsView != null) {
+            mIsUniversalSearch = mAppsView.isUniversalSearchActive();
             mAppsView.getAppsStore().addUpdateListener(this);
             mSearchBarController.refreshSearchResult();
         }
@@ -259,17 +261,41 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         return isBlurAvailable() && isAttachedToWindow()
                 && getWidth() > 0 && getHeight() > 0
                 && getVisibility() == VISIBLE
-                && getWindowVisibility() == VISIBLE;
+                && getWindowVisibility() == VISIBLE
+                && isUniversalSearch();
     }
 
     private void updateBlurState() {
-        mBackdropBlur.setEnabled(mUsePillSearchBar && canDrawBlur());
-        mBackdropBlur.setSurfaceAlpha(Math.round(255f
-                * Utilities.boundToRange(getAlpha(), 0f, 1f)));
+        boolean canDraw = mUsePillSearchBar && isUniversalSearch() && canDrawBlur();
+        mBackdropBlur.setEnabled(canDraw);
+        if (canDraw) {
+            mBackdropBlur.setSurfaceAlpha(Math.round(255f
+                    * Utilities.boundToRange(getAlpha(), 0f, 1f)));
+        }
     }
 
     private void hideBlur() {
         mBackdropBlur.setEnabled(false);
+    }
+
+    public void setUniversalSearch(boolean active) {
+        if (mIsUniversalSearch == active) {
+            return;
+        }
+        mIsUniversalSearch = active;
+        if (mAppsView != null && mAppsView.isUniversalSearchActive() != active) {
+            mAppsView.setUniversalSearchActive(active);
+        }
+        if (!active) {
+            hideBlur();
+        }
+        updateSearchBarStyle();
+        invalidateOutline();
+        invalidate();
+    }
+
+    public boolean isUniversalSearch() {
+        return mIsUniversalSearch || (mAppsView != null && mAppsView.isUniversalSearchActive());
     }
 
     private void updateUniversalSearchDrawablesAndGravity() {
@@ -295,6 +321,18 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         setCompoundDrawablesRelativeWithIntrinsicBounds(mSearchIcon, null, rightDrawable, null);
         setGravity(hasText ? (Gravity.START | Gravity.CENTER_VERTICAL) : Gravity.CENTER);
         setCursorVisible(hasText);
+    }
+
+    private void setUpAppDrawerBackground() {
+        float cornerRadius = getHeight() > 0 ? (getHeight() / 2f) : (Utilities.dpToPx(48) / 2f);
+        mBackgroundTintDrawable.setShape(GradientDrawable.RECTANGLE);
+        mBackgroundTintDrawable.setCornerRadius(cornerRadius);
+        mBackgroundTintDrawable.setColor(getContext().getColor(R.color.meminfo_bg));
+        mBackgroundTintDrawable.setStroke(0, 0);
+        setClipToOutline(false);
+        if (getBackground() != mBackgroundTintDrawable) {
+            setBackground(mBackgroundTintDrawable);
+        }
     }
 
     private void setUpUniversalSearchBackground() {
@@ -348,7 +386,11 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimension(R.dimen.compact_search_bar_text_size));
         setPaddingRelative(Utilities.dpToPx(12), getPaddingTop(), Utilities.dpToPx(12), getPaddingBottom());
-        setUpUniversalSearchBackground();
+        if (isUniversalSearch()) {
+            setUpUniversalSearchBackground();
+        } else {
+            setUpAppDrawerBackground();
+        }
     }
 
     private void updateLegacySearchBarStyle() {
@@ -464,9 +506,8 @@ public class AppsSearchContainerLayout extends ExtendedEditText
             return true;
         }
         boolean handled = super.onTouchEvent(event);
-        if (handled && action == MotionEvent.ACTION_UP && mAppsView != null
-                && !mAppsView.isUniversalSearchActive()) {
-            mAppsView.setUniversalSearchActive(true);
+        if (handled && action == MotionEvent.ACTION_UP && !isUniversalSearch()) {
+            setUniversalSearch(true);
         }
         return handled;
     }
@@ -544,7 +585,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     @Override
     public void draw(Canvas canvas) {
-        if (mUsePillSearchBar && canvas.isHardwareAccelerated()) {
+        if (mUsePillSearchBar && isUniversalSearch() && canvas.isHardwareAccelerated()) {
             updateBlurState();
             if (mBackdropBlur.isEnabled()) {
                 int scrollX = getScrollX();
@@ -564,6 +605,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     @Override
     public void initializeSearch(ActivityAllAppsContainerView<?> appsView) {
         mAppsView = appsView;
+        mIsUniversalSearch = appsView != null && appsView.isUniversalSearchActive();
         UniversalSearchAlgorithm algorithm =
                 new UniversalSearchAlgorithm(getContext());
         algorithm.setQueryHandler(query -> {
@@ -593,21 +635,27 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     @Override
     public void resetSearch() {
+        setUniversalSearch(false);
         mSearchBarController.reset();
     }
 
     @Override
     protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(focused, direction, previouslyFocusedRect);
-        if (focused && mAppsView != null && !mAppsView.isUniversalSearchActive()) {
-            mAppsView.setUniversalSearchActive(true);
+        if (focused && !isUniversalSearch()) {
+            setUniversalSearch(true);
+        } else if (!focused && TextUtils.isEmpty(getText()) && isUniversalSearch()) {
+            setUniversalSearch(false);
+            if (mAppsView != null) {
+                mAppsView.onClearSearchResult();
+            }
         }
     }
 
     @Override
     public void focusSearchField() {
-        if (mAppsView != null && !mAppsView.isUniversalSearchActive()) {
-            mAppsView.setUniversalSearchActive(true);
+        if (!isUniversalSearch()) {
+            setUniversalSearch(true);
         }
         mSearchBarController.focusSearchField();
     }
@@ -657,6 +705,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
 
     @Override
     public void clearSearchResult() {
+        setUniversalSearch(false);
         // Clear the search query
         mSearchQueryBuilder.clear();
         mSearchQueryBuilder.clearSpans();
