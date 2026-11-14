@@ -16,83 +16,182 @@
 
 package com.android.quickstep.util;
 
+import static com.android.launcher3.LauncherState.NORMAL;
+import static com.android.launcher3.util.MultiTranslateDelegate.INDEX_WORKSPACE_UNLOCK_ANIM;
+
 import android.util.ArrayMap;
-import android.util.ArraySet;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 
+import com.android.launcher3.AbstractFloatingView;
 import com.android.launcher3.CellLayout;
+import com.android.launcher3.Hotseat;
 import com.android.launcher3.Launcher;
+import com.android.launcher3.R;
+import com.android.launcher3.Reorderable;
 import com.android.launcher3.ShortcutAndWidgetContainer;
 import com.android.launcher3.Utilities;
 import com.android.launcher3.Workspace;
+import com.android.launcher3.celllayout.CellLayoutLayoutParams;
+import com.android.launcher3.util.MultiPropertyFactory.MultiProperty;
+import com.android.launcher3.util.MultiTranslateDelegate;
 import com.android.launcher3.widget.NavigableAppWidgetHostView;
 
-public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListener {
-    private static final float START_SCALE = 0.85f;
-    private static final int START_TRANSLATION_DP = 20;
+import java.util.ArrayList;
+import java.util.Comparator;
 
+public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListener {
     private final Launcher mLauncher;
     private final ArrayMap<View, ViewState> mViews = new ArrayMap<>();
-    private final ArraySet<View> mExcludedViews = new ArraySet<>();
-    private final ArrayMap<ViewGroup, boolean[]> mClipping = new ArrayMap<>();
-    private final float mStartTranslation;
+    private final ArrayMap<ViewGroup, ClippingState> mClipping = new ArrayMap<>();
+    private final ArrayList<CellLayout> mPages = new ArrayList<>();
+    private CosUnlockAnimationSpec mSpec;
     private ViewTreeObserver mObserver;
-    private float mUnlockAmount;
+    private float mUnlockAmount = 1f;
+    private float mMaxResponse;
+    private double mItemDuration;
+    private double mDuration;
+    private double mDockDelay;
+    private float mDockDistance;
+    private int mPage;
+    private boolean mTimelineFrozen;
+    private boolean mDockGeometryReady;
 
     public HomeUnlockReveal(Launcher launcher) {
         mLauncher = launcher;
-        mStartTranslation = launcher.getResources().getDisplayMetrics().density
-                * START_TRANSLATION_DP;
     }
 
-    public void prepareForUnlock() {
+    public boolean prepareForUnlock() {
         reset();
+        if (!canAnimate() || !mLauncher.getDragLayer().isLaidOut()
+                || !mLauncher.getDragLayer().isAttachedToWindow()) return false;
+        var properties = mLauncher.getDeviceProfile().getDeviceProperties();
+        mSpec = new CosUnlockAnimationSpec(
+                mLauncher.getResources().getDisplayMetrics().density,
+                properties.isTwoPanels(), properties.isTablet());
+        mPage = mLauncher.getWorkspace().getNextPage();
         mUnlockAmount = 0f;
         collectViews();
         mObserver = mLauncher.getDragLayer().getViewTreeObserver();
         mObserver.addOnPreDrawListener(this);
         setUnlockAmount(0f);
+        return isPrepared();
     }
 
-    private void collectViews() {
+    private boolean canAnimate() {
+        return mLauncher.getStateManager().isInStableState(NORMAL) && !mLauncher.isWorkspaceLoading()
+                && !mLauncher.getStateManager().isInTransition()
+                && !mLauncher.isTouchInProgress() && !mLauncher.getDragController().isDragging()
+                && !mLauncher.getWorkspace().isPageInTransition()
+                && !mLauncher.getWorkspace().isOverlayShown()
+                && AbstractFloatingView.getTopOpenView(mLauncher) == null;
+    }
+
+    private boolean collectViews() {
         Workspace<?> workspace = mLauncher.getWorkspace();
-        float[] center = {workspace.getWidth() / 2f, workspace.getHeight() / 2f};
-        Utilities.getDescendantCoordRelativeToAncestor(
-                workspace, mLauncher.getDragLayer(), center, false);
+        disableClipping(mLauncher.getDragLayer());
         disableClipping(workspace);
-        workspace.forEachVisiblePage(page -> {
-            CellLayout layout = (CellLayout) page;
+        mPages.clear();
+        workspace.forEachVisiblePage(page -> mPages.add((CellLayout) page));
+        mPages.sort(Comparator.comparingInt(View::getLeft));
+        int columns = 0;
+        for (CellLayout layout : mPages) columns += layout.getCountX();
+        int columnOffset = 0;
+        for (CellLayout layout : mPages) {
             ShortcutAndWidgetContainer container = layout.getShortcutsAndWidgets();
             disableClipping(layout);
             disableClipping(container);
             for (int i = 0; i < container.getChildCount(); i++) {
-                addView(container.getChildAt(i), center);
+                View view = container.getChildAt(i);
+                if (!canAdd(view)
+                        || !(view.getLayoutParams() instanceof CellLayoutLayoutParams lp)) {
+                    continue;
+                }
+                if (mTimelineFrozen) return false;
+                int cellX = container.invertLayoutHorizontally()
+                        ? layout.getCountX() - lp.getCellX() - lp.cellHSpan : lp.getCellX();
+                float[] center = getPosition(view, view.getWidth() / 2f, view.getHeight() / 2f);
+                CosUnlockAnimationSpec.Item item = mSpec.item(cellX + columnOffset, lp.getCellY(),
+                        lp.cellHSpan, lp.cellVSpan, columns, center[0], center[1],
+                        view.getHeight() * view.getScaleY(),
+                        mLauncher.getDragLayer().getWidth(), mLauncher.getDragLayer().getHeight());
+                mViews.put(view, new ViewState(view, item, null, null, 0f, 0f));
+                mMaxResponse = Math.max(mMaxResponse, item.spring.response);
+                float distance = Math.max(Math.abs(item.translationX), Math.abs(item.translationY));
+                distance = Math.max(distance, (mSpec.startScale - 1f)
+                        * Math.max(view.getWidth(), view.getHeight()));
+                mItemDuration = Math.max(mItemDuration, item.spring.duration(distance));
             }
-        });
-        addView(mLauncher.getHotseat(), center);
+            columnOffset += layout.getCountX();
+        }
+        collectDock();
+        if (!mTimelineFrozen) {
+            mDockDelay = 0.3 * mMaxResponse;
+            mDuration = Math.max(mItemDuration, mDockDelay + Math.max(
+                    mSpec.dockTranslation.duration(mDockDistance), mSpec.dockAlpha.duration(256f)));
+        }
+        return true;
     }
 
-    private void addView(View view, float[] center) {
-        if (mViews.containsKey(view) || mExcludedViews.contains(view)
-                || view.getVisibility() != View.VISIBLE || !view.isLaidOut()) {
-            return;
+    private void collectDock() {
+        Hotseat hotseat = mLauncher.getHotseat();
+        if (hotseat == null) return;
+        disableClipping(hotseat);
+        View icons = hotseat.getShortcutsAndWidgets();
+        View qsb = hotseat.getQsb();
+        View indicator = mLauncher.findViewById(R.id.page_indicator_container);
+        if (indicator == null) indicator = mLauncher.getWorkspace().getPageIndicator();
+        if (!mDockGeometryReady) {
+            float[] position = getPosition(hotseat, 0f, 0f);
+            mDockDistance = Math.max(0f, mLauncher.getDragLayer().getHeight() - position[1]);
+            if (canAdd(indicator)) {
+                position = getPosition(indicator, 0f, 0f);
+                mDockDistance = Math.max(mDockDistance,
+                        mLauncher.getDragLayer().getHeight() - position[1]);
+            }
+            mDockGeometryReady = true;
         }
-        if (view.getAlpha() != 1f || view.getScaleX() <= 0f || view.getScaleY() <= 0f
-                || (!(view instanceof NavigableAppWidgetHostView)
-                && (view.getScaleX() != 1f || view.getScaleY() != 1f))) {
-            mExcludedViews.add(view);
-            return;
+        float dockX = 0f;
+        float dockY = mDockDistance;
+        if (mLauncher.getDeviceProfile().isVerticalBarLayout()) {
+            float[] position = getPosition(hotseat, hotseat.getWidth() / 2f, 0f);
+            dockX = position[0] < mLauncher.getDragLayer().getWidth() / 2f
+                    ? -hotseat.getWidth() : hotseat.getWidth();
+            dockY = 0f;
         }
-        float[] localCenter = {center[0], center[1]};
-        Utilities.mapCoordInSelfToDescendant(view, mLauncher.getDragLayer(), localCenter);
-        mViews.put(view, new ViewState(view, localCenter));
+        addDockView(icons, hotseat.getIconsAlpha(Hotseat.ALPHA_CHANNEL_WORKSPACE_UNLOCK),
+                hotseat.getIconsTranslationX(Hotseat.ICONS_TRANSLATION_X_WORKSPACE_UNLOCK),
+                dockX, dockY);
+        addDockView(qsb, hotseat.getQsbAlpha(Hotseat.ALPHA_CHANNEL_WORKSPACE_UNLOCK),
+                null, dockX, dockY);
+        addDockView(indicator, null, null, 0f, mDockDistance);
+    }
+
+    private void addDockView(View view, MultiProperty alpha, MultiProperty translationX,
+            float x, float y) {
+        if (canAdd(view)) {
+            mViews.put(view, new ViewState(view, null, alpha, translationX, x, y));
+        }
+    }
+
+    private boolean canAdd(View view) {
+        return view != null && !mViews.containsKey(view) && view.getVisibility() == View.VISIBLE
+                && view.isLaidOut() && view.isAttachedToWindow() && view.getAlpha() > 0f
+                && view.getScaleX() > 0f && view.getScaleY() > 0f;
+    }
+
+    private float[] getPosition(View view, float x, float y) {
+        float[] position = {x, y};
+        Utilities.getDescendantCoordRelativeToAncestor(
+                view, mLauncher.getDragLayer(), position, false);
+        return position;
     }
 
     private void disableClipping(ViewGroup view) {
         if (!mClipping.containsKey(view)) {
-            mClipping.put(view, new boolean[]{view.getClipChildren(), view.getClipToPadding()});
+            mClipping.put(view, new ClippingState(view));
             view.setClipChildren(false);
             view.setClipToPadding(false);
         }
@@ -100,9 +199,42 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
 
     @Override
     public boolean onPreDraw() {
-        collectViews();
+        if (mObserver == null) return true;
+        if (!isSceneValid() || !collectViews()) {
+            reset();
+            return true;
+        }
         setUnlockAmount(mUnlockAmount);
         return true;
+    }
+
+    private boolean isSceneValid() {
+        if (!canAnimate() || mPage != mLauncher.getWorkspace().getNextPage()) return false;
+        for (int i = 0; i < mViews.size(); i++) {
+            if (mViews.valueAt(i).hasLayoutChanged()) return false;
+        }
+        for (int i = 0; i < mClipping.size(); i++) {
+            if (mClipping.valueAt(i).hasChanged()) return false;
+        }
+        return true;
+    }
+
+    public boolean finishPreparation() {
+        if (mObserver == null) return false;
+        if (!isSceneValid() || !collectViews()) {
+            reset();
+            return false;
+        }
+        mTimelineFrozen = true;
+        return true;
+    }
+
+    public long getDuration() {
+        return (long) Math.ceil(mDuration * 1000);
+    }
+
+    public boolean isPrepared() {
+        return mObserver != null;
     }
 
     public float getUnlockAmount() {
@@ -110,12 +242,17 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
     }
 
     public void setUnlockAmount(float amount) {
-        mUnlockAmount = Utilities.boundToRange(amount, 0f, 1f);
-        float scale = START_SCALE + (1f - START_SCALE) * mUnlockAmount;
-        float translation = mStartTranslation * (1f - mUnlockAmount);
-        for (int i = 0; i < mViews.size(); i++) {
-            mViews.valueAt(i).apply(mUnlockAmount, scale, translation);
+        if (mObserver == null || !Float.isFinite(amount)) return;
+        if (!isSceneValid()) {
+            reset();
+            return;
         }
+        mUnlockAmount = Utilities.boundToRange(amount, 0f, 1f);
+        double seconds = mDuration * mUnlockAmount;
+        for (int i = 0; i < mViews.size(); i++) {
+            mViews.valueAt(i).apply(seconds, mUnlockAmount == 1f, mSpec, mDockDelay);
+        }
+        if (mLauncher.getHotseat() != null) mLauncher.getHotseat().invalidate();
     }
 
     public void reset() {
@@ -131,16 +268,63 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
             mViews.valueAt(i).restore();
         }
         mViews.clear();
-        mExcludedViews.clear();
+        mPages.clear();
         for (int i = 0; i < mClipping.size(); i++) {
-            boolean[] clipping = mClipping.valueAt(i);
-            mClipping.keyAt(i).setClipChildren(clipping[0]);
-            mClipping.keyAt(i).setClipToPadding(clipping[1]);
+            mClipping.valueAt(i).restore();
         }
         mClipping.clear();
         mUnlockAmount = 1f;
-        if (mLauncher != null && mLauncher.getHotseat() != null) {
+        mMaxResponse = 0f;
+        mItemDuration = 0;
+        mDuration = 0;
+        mDockDistance = 0f;
+        mDockDelay = 0;
+        mTimelineFrozen = false;
+        mDockGeometryReady = false;
+        if (mLauncher.getHotseat() != null) {
             mLauncher.getHotseat().postInvalidate();
+        }
+    }
+
+    private static class LayoutState {
+        private final View mView;
+        private final ViewParent mParent;
+        private final int mLeft;
+        private final int mTop;
+        private final int mWidth;
+        private final int mHeight;
+
+        LayoutState(View view) {
+            mView = view;
+            mParent = view.getParent();
+            mLeft = view.getLeft();
+            mTop = view.getTop();
+            mWidth = view.getWidth();
+            mHeight = view.getHeight();
+        }
+
+        boolean hasChanged() {
+            return !mView.isAttachedToWindow() || mView.getParent() != mParent
+                    || mView.getLeft() != mLeft || mView.getTop() != mTop
+                    || mView.getWidth() != mWidth || mView.getHeight() != mHeight;
+        }
+    }
+
+    private static final class ClippingState extends LayoutState {
+        private final ViewGroup mView;
+        private final boolean mClipChildren;
+        private final boolean mClipToPadding;
+
+        ClippingState(ViewGroup view) {
+            super(view);
+            mView = view;
+            mClipChildren = view.getClipChildren();
+            mClipToPadding = view.getClipToPadding();
+        }
+
+        void restore() {
+            mView.setClipChildren(mClipChildren);
+            mView.setClipToPadding(mClipToPadding);
         }
     }
 
@@ -151,36 +335,96 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         private final float mScaleY;
         private final float mTranslationX;
         private final float mTranslationY;
-        private final float mPivotOffsetX;
-        private final float mPivotOffsetY;
+        private final float mWidgetScale;
+        private final MultiTranslateDelegate mTranslateDelegate;
+        private final MultiProperty mAlphaChannel;
+        private final MultiProperty mTranslationXChannel;
+        private final CosUnlockAnimationSpec.Item mItem;
+        private final float mDockX;
+        private final float mDockY;
+        private final LayoutState mLayout;
 
-        ViewState(View view, float[] center) {
+        ViewState(View view, CosUnlockAnimationSpec.Item item, MultiProperty alphaChannel,
+                MultiProperty translationXChannel, float dockX, float dockY) {
             mView = view;
-            mAlpha = view.getAlpha();
+            mItem = item;
+            mAlphaChannel = alphaChannel;
+            mTranslationXChannel = translationXChannel;
+            mAlpha = alphaChannel == null ? view.getAlpha() : alphaChannel.getValue();
             mScaleX = view.getScaleX();
             mScaleY = view.getScaleY();
-            mTranslationX = view.getTranslationX();
-            mTranslationY = view.getTranslationY();
-            mPivotOffsetX = mScaleX
-                    * (Utilities.boundToRange(center[0], 0f, view.getWidth()) - view.getPivotX());
-            mPivotOffsetY = mScaleY
-                    * (Utilities.boundToRange(center[1], 0f, view.getHeight()) - view.getPivotY());
+            mWidgetScale = view instanceof NavigableAppWidgetHostView widget
+                    ? widget.getScaleToFit() : 1f;
+            mTranslateDelegate = view instanceof Reorderable reorderable
+                    ? reorderable.getTranslateDelegate() : null;
+            mTranslationX = translationXChannel != null ? translationXChannel.getValue()
+                    : mTranslateDelegate == null ? view.getTranslationX()
+                            : mTranslateDelegate.getTranslationX(INDEX_WORKSPACE_UNLOCK_ANIM)
+                                    .getValue();
+            mTranslationY = mTranslateDelegate == null ? view.getTranslationY()
+                    : mTranslateDelegate.getTranslationY(INDEX_WORKSPACE_UNLOCK_ANIM).getValue();
+            mDockX = dockX;
+            mDockY = dockY;
+            mLayout = new LayoutState(view);
         }
 
-        void apply(float amount, float scale, float translation) {
-            mView.setAlpha(mAlpha * amount);
-            mView.setScaleX(mScaleX * scale);
-            mView.setScaleY(mScaleY * scale);
-            mView.setTranslationX(mTranslationX + mPivotOffsetX * (1f - scale));
-            mView.setTranslationY(mTranslationY + mPivotOffsetY * (1f - scale) + translation);
+        boolean hasLayoutChanged() {
+            return mLayout.hasChanged();
+        }
+
+        void apply(double seconds, boolean finished, CosUnlockAnimationSpec spec, double dockDelay) {
+            if (mItem == null) {
+                float progress = finished ? 1f : spec.dockTranslation.value(seconds - dockDelay);
+                float alpha = finished ? 1f : spec.dockAlpha.value(seconds - dockDelay);
+                setAlpha(alpha);
+                setTranslation(mDockX * (1f - progress), mDockY * (1f - progress));
+            } else {
+                float progress = finished ? 1f : mItem.spring.value(seconds);
+                float scale = spec.startScale + (1f - spec.startScale) * progress;
+                float fit = getWidgetScaleRatio();
+                setAlpha(progress);
+                mView.setScaleX(mScaleX * fit * scale);
+                mView.setScaleY(mScaleY * fit * scale);
+                float pivotX = mScaleX * fit * (mView.getWidth() / 2f - mView.getPivotX());
+                float pivotY = mScaleY * fit * (mView.getHeight() / 2f - mView.getPivotY());
+                setTranslation(mItem.translationX * (1f - progress) + pivotX * (1f - scale),
+                        mItem.translationY * (1f - progress) + pivotY * (1f - scale));
+            }
+        }
+
+        private float getWidgetScaleRatio() {
+            return mView instanceof NavigableAppWidgetHostView widget && mWidgetScale > 0f
+                    ? widget.getScaleToFit() / mWidgetScale : 1f;
+        }
+
+        private void setAlpha(float alpha) {
+            float value = mAlpha * Utilities.boundToRange(alpha, 0f, 1f);
+            if (mAlphaChannel == null) mView.setAlpha(value);
+            else mAlphaChannel.setValue(value);
+        }
+
+        private void setTranslation(float x, float y) {
+            if (mTranslateDelegate != null) {
+                mTranslateDelegate.setTranslation(INDEX_WORKSPACE_UNLOCK_ANIM,
+                        mTranslationX + x, mTranslationY + y);
+            } else {
+                if (mTranslationXChannel != null) {
+                    mTranslationXChannel.setValue(mTranslationX + x);
+                } else if (mItem != null || mDockX != 0f) {
+                    mView.setTranslationX(mTranslationX + x);
+                }
+                if (mItem != null || mDockY != 0f) mView.setTranslationY(mTranslationY + y);
+            }
         }
 
         void restore() {
-            mView.setAlpha(mAlpha);
-            mView.setScaleX(mScaleX);
-            mView.setScaleY(mScaleY);
-            mView.setTranslationX(mTranslationX);
-            mView.setTranslationY(mTranslationY);
+            setAlpha(1f);
+            if (mItem != null) {
+                float fit = getWidgetScaleRatio();
+                mView.setScaleX(mScaleX * fit);
+                mView.setScaleY(mScaleY * fit);
+            }
+            setTranslation(0f, 0f);
         }
     }
 }
