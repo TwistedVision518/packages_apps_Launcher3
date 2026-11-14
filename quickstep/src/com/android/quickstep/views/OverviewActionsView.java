@@ -697,6 +697,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         actionParams.setMargins(
                 actionParams.leftMargin, mDp.getOverviewProfile().getActionsTopMarginPx(),
                 actionParams.rightMargin, getBottomMargin());
+        actionBar.setLayoutParams(actionParams);
     }
 
     private int getBottomMargin() {

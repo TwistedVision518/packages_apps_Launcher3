@@ -145,6 +145,7 @@ public class MemInfoView extends TextView implements Insettable {
 
     public void setDp(DeviceProfile dp) {
         mDp = dp;
+        updateVerticalMargin(DisplayController.getNavigationMode(getContext()));
     }
 
     public void setAlpha(int alphaType, float alpha) {
@@ -156,11 +157,16 @@ public class MemInfoView extends TextView implements Insettable {
     }
 
     public void updateVerticalMargin(NavigationMode mode) {
+        if (mDp == null) {
+            return;
+        }
+
         LayoutParams lp = (LayoutParams) getLayoutParams();
         int bottomMargin = mDp.getOverviewActionsClaimedSpaceBelow();
 
         lp.setMargins(lp.leftMargin, lp.topMargin, lp.rightMargin, bottomMargin);
         lp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
+        setLayoutParams(lp);
     }
 
     private String formatTotalMemory() {

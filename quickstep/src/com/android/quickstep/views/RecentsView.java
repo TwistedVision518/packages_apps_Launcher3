@@ -2448,7 +2448,6 @@ public abstract class RecentsView<
 
         // Update RecentsView and TaskView's DeviceProfile dependent layout.
         updateOrientationHandler();
-        mActionsView.updateDimension(dp, mLastComputedTaskSize);
     }
 
     private void updateOrientationHandler() {
@@ -2511,6 +2510,10 @@ public abstract class RecentsView<
     private void updateSizeAndPadding() {
         DeviceProfile dp = mContainer.getDeviceProfile();
         getTaskSize(mLastComputedTaskSize);
+        mActionsView.updateDimension(dp, mLastComputedTaskSize);
+        if (mMemInfoView != null) {
+            mMemInfoView.setDp(dp);
+        }
         mTaskWidth = mLastComputedTaskSize.width();
         mTaskHeight = mLastComputedTaskSize.height();
         setPadding(mLastComputedTaskSize.left - mInsets.left,
