@@ -47,17 +47,20 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
     private final ArrayMap<View, ViewState> mViews = new ArrayMap<>();
     private final ArrayMap<ViewGroup, ClippingState> mClipping = new ArrayMap<>();
     private final ArrayList<CellLayout> mPages = new ArrayList<>();
+    private final ArrayMap<Float, SpringState> mItemSprings = new ArrayMap<>();
     private CosUnlockAnimationSpec mSpec;
+    private SpringState mDockTranslation;
+    private SpringState mDockAlpha;
     private ViewTreeObserver mObserver;
     private float mUnlockAmount = 1f;
     private float mMaxResponse;
-    private double mItemDuration;
     private double mDuration;
     private double mDockDelay;
     private float mDockDistance;
     private int mPage;
     private boolean mTimelineFrozen;
     private boolean mDockGeometryReady;
+    private boolean mFinished;
 
     public HomeUnlockReveal(Launcher launcher) {
         mLauncher = launcher;
@@ -71,6 +74,8 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         mSpec = new CosUnlockAnimationSpec(
                 mLauncher.getResources().getDisplayMetrics().density,
                 properties.isTwoPanels(), properties.isTablet());
+        mDockTranslation = new SpringState(mSpec.dockTranslation, Float.MAX_VALUE);
+        mDockAlpha = new SpringState(mSpec.dockAlpha, CosUnlockAnimationSpec.MIN_VISIBLE_CHANGE);
         mPage = mLauncher.getWorkspace().getNextPage();
         mUnlockAmount = 0f;
         collectViews();
@@ -117,32 +122,40 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
                         lp.cellHSpan, lp.cellVSpan, columns, center[0], center[1],
                         view.getHeight() * view.getScaleY(),
                         mLauncher.getDragLayer().getWidth(), mLauncher.getDragLayer().getHeight());
-                mViews.put(view, new ViewState(view, item, null, null, 0f, 0f));
+                SpringState spring = mItemSprings.get(item.spring.response);
+                if (spring == null) {
+                    spring = new SpringState(item.spring, item.minimumVisibleChange);
+                    mItemSprings.put(item.spring.response, spring);
+                } else {
+                    spring.includeMinimumVisibleChange(item.minimumVisibleChange);
+                }
+                mViews.put(view, new ViewState(view, item, spring, null, null, 0f, 0f));
                 mMaxResponse = Math.max(mMaxResponse, item.spring.response);
-                float distance = Math.max(Math.abs(item.translationX), Math.abs(item.translationY));
-                distance = Math.max(distance, (mSpec.startScale - 1f)
-                        * Math.max(view.getWidth(), view.getHeight()));
-                mItemDuration = Math.max(mItemDuration, item.spring.duration(distance));
             }
             columnOffset += layout.getCountX();
         }
-        collectDock();
+        if (!collectDock()) return false;
         if (!mTimelineFrozen) {
-            mDockDelay = 0.3 * mMaxResponse;
-            mDuration = Math.max(mItemDuration, mDockDelay + Math.max(
-                    mSpec.dockTranslation.duration(mDockDistance), mSpec.dockAlpha.duration(256f)));
+            mDockDelay = Math.round((double) (mMaxResponse * 0.3f * 1000f)) / 1000.0;
+            mDuration = mDockDelay + Math.max(mDockTranslation.maxDuration(),
+                    mDockAlpha.maxDuration());
+            for (int i = 0; i < mItemSprings.size(); i++) {
+                mDuration = Math.max(mDuration, mItemSprings.valueAt(i).maxDuration());
+            }
+            mDuration = Math.ceil(mDuration * 1000) / 1000.0;
         }
         return true;
     }
 
-    private void collectDock() {
+    private boolean collectDock() {
         Hotseat hotseat = mLauncher.getHotseat();
-        if (hotseat == null) return;
+        if (hotseat == null) return true;
         disableClipping(hotseat);
         View icons = hotseat.getShortcutsAndWidgets();
         View qsb = hotseat.getQsb();
         View indicator = mLauncher.findViewById(R.id.page_indicator_container);
         if (indicator == null) indicator = mLauncher.getWorkspace().getPageIndicator();
+        if (mTimelineFrozen && (canAdd(icons) || canAdd(qsb) || canAdd(indicator))) return false;
         if (!mDockGeometryReady) {
             float[] position = getPosition(hotseat, 0f, 0f);
             mDockDistance = Math.max(0f, mLauncher.getDragLayer().getHeight() - position[1]);
@@ -167,12 +180,15 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         addDockView(qsb, hotseat.getQsbAlpha(Hotseat.ALPHA_CHANNEL_WORKSPACE_UNLOCK),
                 null, dockX, dockY);
         addDockView(indicator, null, null, 0f, mDockDistance);
+        return true;
     }
 
     private void addDockView(View view, MultiProperty alpha, MultiProperty translationX,
             float x, float y) {
         if (canAdd(view)) {
-            mViews.put(view, new ViewState(view, null, alpha, translationX, x, y));
+            mDockTranslation.includeMinimumVisibleChange(
+                    1f / Math.max(1f, Math.max(Math.abs(x), Math.abs(y))));
+            mViews.put(view, new ViewState(view, null, null, alpha, translationX, x, y));
         }
     }
 
@@ -230,7 +246,7 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
     }
 
     public long getDuration() {
-        return (long) Math.ceil(mDuration * 1000);
+        return Math.round(mDuration * 1000);
     }
 
     public boolean isPrepared() {
@@ -241,6 +257,10 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         return mUnlockAmount;
     }
 
+    public boolean isFinished() {
+        return mFinished;
+    }
+
     public void setUnlockAmount(float amount) {
         if (mObserver == null || !Float.isFinite(amount)) return;
         if (!isSceneValid()) {
@@ -248,9 +268,21 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
             return;
         }
         mUnlockAmount = Utilities.boundToRange(amount, 0f, 1f);
-        double seconds = mDuration * mUnlockAmount;
+        double seconds = Math.round(mDuration * mUnlockAmount * 1000) / 1000.0;
+        mFinished = true;
+        for (int i = 0; i < mItemSprings.size(); i++) {
+            SpringState spring = mItemSprings.valueAt(i);
+            spring.update(seconds);
+            mFinished &= spring.isFinished(seconds);
+        }
+        double dockSeconds = seconds - mDockDelay;
+        mDockTranslation.update(dockSeconds);
+        mDockAlpha.update(dockSeconds);
+        mFinished &= mDockTranslation.isFinished(dockSeconds) && mDockAlpha.isFinished(dockSeconds);
+        mFinished |= mUnlockAmount == 1f;
         for (int i = 0; i < mViews.size(); i++) {
-            mViews.valueAt(i).apply(seconds, mUnlockAmount == 1f, mSpec, mDockDelay);
+            mViews.valueAt(i).apply(mUnlockAmount == 1f, mSpec,
+                    mDockTranslation.value, mDockAlpha.value);
         }
         if (mLauncher.getHotseat() != null) mLauncher.getHotseat().invalidate();
     }
@@ -269,20 +301,58 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         }
         mViews.clear();
         mPages.clear();
+        mItemSprings.clear();
+        mDockTranslation = null;
+        mDockAlpha = null;
         for (int i = 0; i < mClipping.size(); i++) {
             mClipping.valueAt(i).restore();
         }
         mClipping.clear();
         mUnlockAmount = 1f;
         mMaxResponse = 0f;
-        mItemDuration = 0;
         mDuration = 0;
         mDockDistance = 0f;
         mDockDelay = 0;
         mTimelineFrozen = false;
         mDockGeometryReady = false;
+        mFinished = false;
         if (mLauncher.getHotseat() != null) {
             mLauncher.getHotseat().postInvalidate();
+        }
+    }
+
+    private static final class SpringState {
+        private final CosUnlockAnimationSpec.Spring mSpring;
+        private float mMinimumVisibleChange;
+        private double mFinishedAt = Double.POSITIVE_INFINITY;
+        float value;
+
+        SpringState(CosUnlockAnimationSpec.Spring spring, float minimumVisibleChange) {
+            mSpring = spring;
+            mMinimumVisibleChange = minimumVisibleChange;
+        }
+
+        void includeMinimumVisibleChange(float minimumVisibleChange) {
+            if (minimumVisibleChange < mMinimumVisibleChange) {
+                mMinimumVisibleChange = minimumVisibleChange;
+                mFinishedAt = Double.POSITIVE_INFINITY;
+            }
+        }
+
+        void update(double seconds) {
+            if (seconds > 0 && seconds < mFinishedAt
+                    && mSpring.isAtEquilibrium(seconds, mMinimumVisibleChange)) {
+                mFinishedAt = seconds;
+            }
+            value = isFinished(seconds) ? 1f : mSpring.value(seconds);
+        }
+
+        boolean isFinished(double seconds) {
+            return seconds >= mFinishedAt;
+        }
+
+        double maxDuration() {
+            return mSpring.maxDuration(mMinimumVisibleChange);
         }
     }
 
@@ -340,14 +410,17 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
         private final MultiProperty mAlphaChannel;
         private final MultiProperty mTranslationXChannel;
         private final CosUnlockAnimationSpec.Item mItem;
+        private final SpringState mItemSpring;
         private final float mDockX;
         private final float mDockY;
         private final LayoutState mLayout;
 
-        ViewState(View view, CosUnlockAnimationSpec.Item item, MultiProperty alphaChannel,
-                MultiProperty translationXChannel, float dockX, float dockY) {
+        ViewState(View view, CosUnlockAnimationSpec.Item item, SpringState itemSpring,
+                MultiProperty alphaChannel, MultiProperty translationXChannel,
+                float dockX, float dockY) {
             mView = view;
             mItem = item;
+            mItemSpring = itemSpring;
             mAlphaChannel = alphaChannel;
             mTranslationXChannel = translationXChannel;
             mAlpha = alphaChannel == null ? view.getAlpha() : alphaChannel.getValue();
@@ -372,14 +445,15 @@ public final class HomeUnlockReveal implements ViewTreeObserver.OnPreDrawListene
             return mLayout.hasChanged();
         }
 
-        void apply(double seconds, boolean finished, CosUnlockAnimationSpec spec, double dockDelay) {
+        void apply(boolean finished, CosUnlockAnimationSpec spec,
+                float dockTranslation, float dockAlpha) {
             if (mItem == null) {
-                float progress = finished ? 1f : spec.dockTranslation.value(seconds - dockDelay);
-                float alpha = finished ? 1f : spec.dockAlpha.value(seconds - dockDelay);
+                float progress = finished ? 1f : dockTranslation;
+                float alpha = finished ? 1f : dockAlpha;
                 setAlpha(alpha);
                 setTranslation(mDockX * (1f - progress), mDockY * (1f - progress));
             } else {
-                float progress = finished ? 1f : mItem.spring.value(seconds);
+                float progress = finished ? 1f : mItemSpring.value;
                 float scale = spec.startScale + (1f - spec.startScale) * progress;
                 float fit = getWidgetScaleRatio();
                 setAlpha(progress);

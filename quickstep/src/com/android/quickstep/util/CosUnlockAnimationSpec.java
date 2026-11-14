@@ -6,6 +6,7 @@ package com.android.quickstep.util;
 
 public final class CosUnlockAnimationSpec {
     private static final float ITEM_BOUNCE = 0.18f;
+    static final float MIN_VISIBLE_CHANGE = 1f / 256f;
 
     final float startScale;
     final float columnSpacing;
@@ -35,18 +36,25 @@ public final class CosUnlockAnimationSpec {
         float fromX = windowWidth / 2f + column * columnSpacing;
         float fromY = -0.7f * windowHeight + height * startScale / 2f
                 + (row - (spanY + 1f) / 2f) * rowSpacing;
-        return new Item(fromX - centerX, fromY - centerY,
+        float translationX = fromX - centerX;
+        float translationY = fromY - centerY;
+        float minimumVisibleChange = Math.min(
+                1f / Math.max(Math.abs(translationX), Math.abs(translationY)),
+                Math.min(MIN_VISIBLE_CHANGE / Math.abs(1f - startScale), MIN_VISIBLE_CHANGE));
+        return new Item(translationX, translationY, minimumVisibleChange,
                 new Spring(ITEM_BOUNCE, response));
     }
 
     static final class Item {
         final float translationX;
         final float translationY;
+        final float minimumVisibleChange;
         final Spring spring;
 
-        Item(float translationX, float translationY, Spring spring) {
+        Item(float translationX, float translationY, float minimumVisibleChange, Spring spring) {
             this.translationX = translationX;
             this.translationY = translationY;
+            this.minimumVisibleChange = minimumVisibleChange;
             this.spring = spring;
         }
     }
@@ -60,8 +68,8 @@ public final class CosUnlockAnimationSpec {
 
         Spring(float bounce, float response) {
             this.response = response;
-            omega = 2 * Math.PI / response;
-            damping = 1 - bounce;
+            omega = Math.sqrt((float) Math.pow(2 * Math.PI / response, 2));
+            damping = 1f - bounce;
             decay = damping * omega;
             frequency = omega * Math.sqrt(Math.max(0, 1 - damping * damping));
         }
@@ -75,8 +83,18 @@ public final class CosUnlockAnimationSpec {
             return (float) (1 - displacement);
         }
 
-        double duration(float distance) {
-            double threshold = 0.25 / Math.max(1, distance);
+        boolean isAtEquilibrium(double seconds, float minimumVisibleChange) {
+            double threshold = minimumVisibleChange * 0.75f;
+            float velocity = (float) (frequency == 0
+                    ? omega * omega * seconds * Math.exp(-omega * seconds)
+                    : omega * omega / frequency * Math.exp(-decay * seconds)
+                            * Math.sin(frequency * seconds));
+            return Math.abs(1f - value(seconds)) < threshold
+                    && Math.abs(velocity) < threshold * 62.5;
+        }
+
+        double maxDuration(float minimumVisibleChange) {
+            double threshold = minimumVisibleChange * 0.75f;
             double seconds = 0;
             while (seconds < 4) {
                 double envelope = frequency == 0
