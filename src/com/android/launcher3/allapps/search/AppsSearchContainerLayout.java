@@ -215,6 +215,11 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     public void onVisibilityAggregated(boolean isVisible) {
         super.onVisibilityAggregated(isVisible);
         mBackdropBlur.onVisibilityAggregated(isVisible);
+        if (!isVisible) {
+            hideBlur();
+        } else {
+            updateBlurState();
+        }
     }
 
     @Override
@@ -253,6 +258,7 @@ public class AppsSearchContainerLayout extends ExtendedEditText
     private boolean canDrawBlur() {
         return isBlurAvailable() && isAttachedToWindow()
                 && getWidth() > 0 && getHeight() > 0
+                && getVisibility() == VISIBLE
                 && getWindowVisibility() == VISIBLE;
     }
 
@@ -313,7 +319,9 @@ public class AppsSearchContainerLayout extends ExtendedEditText
         mBackgroundTintDrawable.setColor(fillColor);
         mBackgroundTintDrawable.setStroke(strokeWidth, strokeColor);
         setClipToOutline(false);
-        setBackground(mBackgroundTintDrawable);
+        if (getBackground() != mBackgroundTintDrawable) {
+            setBackground(mBackgroundTintDrawable);
+        }
     }
 
     private void updateSearchBarStyle() {

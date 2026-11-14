@@ -54,43 +54,67 @@ public class SpringRelativeLayout extends RelativeLayout {
     public void draw(Canvas canvas) {
         super.draw(canvas);
         if (!mEdgeGlowTop.isFinished()) {
-            final int restoreCount = canvas.save();
-            canvas.translate(0, 0);
-            mEdgeGlowTop.setSize(getWidth(), getHeight());
-            if (mEdgeGlowTop.draw(canvas)) {
-                postInvalidateOnAnimation();
+            if (shouldDrawEdgeGlowTop()) {
+                final int restoreCount = canvas.save();
+                canvas.translate(0, 0);
+                mEdgeGlowTop.setSize(getWidth(), getHeight());
+                if (mEdgeGlowTop.draw(canvas)) {
+                    postInvalidateOnAnimation();
+                }
+                canvas.restoreToCount(restoreCount);
+            } else {
+                mEdgeGlowTop.finish();
             }
-            canvas.restoreToCount(restoreCount);
         }
         if (!mEdgeGlowBottom.isFinished()) {
-            final int restoreCount = canvas.save();
-            final int width = getWidth();
-            final int height = getHeight();
-            canvas.translate(-width, height);
-            canvas.rotate(180, width, 0);
-            mEdgeGlowBottom.setSize(width, height);
-            if (mEdgeGlowBottom.draw(canvas)) {
-                postInvalidateOnAnimation();
+            if (shouldDrawEdgeGlowBottom()) {
+                final int restoreCount = canvas.save();
+                final int width = getWidth();
+                final int height = getHeight();
+                canvas.translate(-width, height);
+                canvas.rotate(180, width, 0);
+                mEdgeGlowBottom.setSize(width, height);
+                if (mEdgeGlowBottom.draw(canvas)) {
+                    postInvalidateOnAnimation();
+                }
+                canvas.restoreToCount(restoreCount);
+            } else {
+                mEdgeGlowBottom.finish();
             }
-            canvas.restoreToCount(restoreCount);
         }
     }
 
+    protected boolean shouldDrawEdgeGlowTop() {
+        return true;
+    }
+
+    protected boolean shouldDrawEdgeGlowBottom() {
+        return true;
+    }
 
     /**
      * Absorbs the velocity as a result for swipe-up fling
      */
     protected void absorbSwipeUpVelocity(int velocity) {
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
         mEdgeGlowBottom.onAbsorb(velocity);
         invalidate();
     }
 
     protected void absorbPullDeltaDistance(float deltaDistance, float displacement) {
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
         mEdgeGlowBottom.onPull(deltaDistance, displacement);
         invalidate();
     }
 
     public void onRelease() {
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
         mEdgeGlowBottom.onRelease();
     }
 

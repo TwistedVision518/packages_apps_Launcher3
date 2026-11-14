@@ -60,6 +60,7 @@ import android.view.ViewGroup.MarginLayoutParams;
 import android.view.ViewOutlineProvider;
 import android.view.WindowInsets;
 import android.widget.Button;
+import android.widget.EdgeEffect;
 import android.widget.RelativeLayout;
 import android.widget.RelativeLayout.LayoutParams;
 
@@ -95,6 +96,7 @@ import com.android.launcher3.pm.UserCache;
 import com.android.launcher3.recyclerview.AllAppsRecyclerViewPool;
 import com.android.launcher3.util.ItemInfoMatcher;
 import com.android.launcher3.util.Preconditions;
+import com.android.launcher3.util.SpringEdgeEffectFactory;
 import com.android.launcher3.util.Themes;
 import com.android.launcher3.views.ActivityContext;
 import com.android.launcher3.pageindicators.PageIndicatorDots;
@@ -198,6 +200,23 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     private int mBottomSheetBackgroundColorLegacy;
     private int mTabsProtectionAlpha;
     @Nullable private AllAppsTransitionController mAllAppsTransitionController;
+    @Nullable private EdgeEffect mBottomSpringEdgeEffect;
+    @Nullable private RecyclerView mBottomSpringRecyclerView;
+    private float mLastPullDistance = 0f;
+
+    @Nullable
+    private EdgeEffect getBottomSpringEdgeEffect() {
+        AllAppsRecyclerView rv = getActiveRecyclerView();
+        if (rv == null) {
+            return null;
+        }
+        if (mBottomSpringEdgeEffect == null || mBottomSpringRecyclerView != rv) {
+            mBottomSpringRecyclerView = rv;
+            mBottomSpringEdgeEffect = SpringEdgeEffectFactory.createSpringEdgeEffect(
+                    rv, RecyclerView.EdgeEffectFactory.DIRECTION_BOTTOM);
+        }
+        return mBottomSpringEdgeEffect;
+    }
 
     public ActivityAllAppsContainerView(Context context) {
         this(context, null);
@@ -551,6 +570,10 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
      * @param clearScrim Whether to clear the all apps scrim.
      */
     public void reset(boolean animate, boolean exitSearch, boolean clearScrim) {
+        mLastPullDistance = 0f;
+        if (mBottomSpringEdgeEffect != null && !mBottomSpringEdgeEffect.isFinished()) {
+            mBottomSpringEdgeEffect.finish();
+        }
         if (mOneUiPagedView != null) {
             mOneUiPagedView.setCurrentPage(0);
         }
@@ -1608,7 +1631,12 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
 
-        if (mNavBarScrimHeight > 0) {
+        boolean noNavBarScrim = Flags.allAppsBlur()
+                || isBackgroundBlurEnabled()
+                || LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext())
+                || "bottom".equals(getSearchBarPlacement())
+                || "2".equals(getSearchBarPlacement());
+        if (!noNavBarScrim && mNavBarScrimHeight > 0) {
             float left = (getWidth() - getWidth() / getScaleX()) / 2;
             float top = getHeight() / 2f + (getHeight() / 2f - mNavBarScrimHeight) / getScaleY();
             canvas.drawRect(left, top, getWidth() / getScaleX(),
@@ -1623,8 +1651,9 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
                 && mSearchContainer.getVisibility() == VISIBLE
                 && !isSearchBarFloating()) {
 
+            boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
             String searchPlacement = getSearchBarPlacement();
-            if ("bottom".equals(searchPlacement)) {
+            if (!usePillSearch && ("bottom".equals(searchPlacement) || "2".equals(searchPlacement))) {
                 float searchTop = mSearchContainer.getTop() + mSearchContainer.getTranslationY();
                 if (searchTop > child.getTop()) {
                     int saveCount = canvas.save();
@@ -1897,9 +1926,18 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     /**
      * Adds an update listener to animator that adds springs to the animation.
      */
+    @Override
+    protected boolean shouldDrawEdgeGlowBottom() {
+        boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
+        String searchPlacement = getSearchBarPlacement();
+        boolean searchBottom = "bottom".equals(searchPlacement) || "2".equals(searchPlacement);
+        return !(Flags.allAppsBlur() || isBackgroundBlurEnabled() || usePillSearch || searchBottom);
+    }
+
     public void addSpringFromFlingUpdateListener(ValueAnimator animator,
             float velocity /* release velocity */,
             float progress /* portion of the distance to travel*/) {
+        mLastPullDistance = 0f;
         animator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationStart(Animator animator) {
@@ -1915,10 +1953,52 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
 
     /** Invoked when the container is pulled. */
     public void onPull(float deltaDistance, float displacement) {
+        boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
+        EdgeEffect effect = getBottomSpringEdgeEffect();
+        if (effect != null && (usePillSearch || !shouldDrawEdgeGlowBottom())) {
+            float pullDistance = deltaDistance;
+            float delta = pullDistance - mLastPullDistance;
+            mLastPullDistance = pullDistance;
+            effect.onPull(delta, displacement);
+            return;
+        }
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
         absorbPullDeltaDistance(PULL_MULTIPLIER * deltaDistance, PULL_MULTIPLIER * displacement);
         // Current motion spec is to actually push and not pull
         // on this surface. However, until EdgeEffect.onPush (b/190612804) is
         // implemented at view level, we will simply pull
+    }
+
+    @Override
+    public void onRelease() {
+        mLastPullDistance = 0f;
+        boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
+        EdgeEffect effect = getBottomSpringEdgeEffect();
+        if (effect != null && (usePillSearch || !shouldDrawEdgeGlowBottom())) {
+            effect.onRelease();
+            return;
+        }
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
+        super.onRelease();
+    }
+
+    @Override
+    protected void absorbSwipeUpVelocity(int velocity) {
+        mLastPullDistance = 0f;
+        boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
+        EdgeEffect effect = getBottomSpringEdgeEffect();
+        if (effect != null && (usePillSearch || !shouldDrawEdgeGlowBottom())) {
+            effect.onAbsorb(velocity);
+            return;
+        }
+        if (!shouldDrawEdgeGlowBottom()) {
+            return;
+        }
+        super.absorbSwipeUpVelocity(velocity);
     }
 
     @Override
@@ -1936,7 +2016,12 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     @Override
     public void setScaleY(float scaleY) {
         super.setScaleY(scaleY);
-        if (mNavBarScrimHeight > 0) {
+        boolean noNavBarScrim = Flags.allAppsBlur()
+                || isBackgroundBlurEnabled()
+                || LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext())
+                || "bottom".equals(getSearchBarPlacement())
+                || "2".equals(getSearchBarPlacement());
+        if (!noNavBarScrim && mNavBarScrimHeight > 0) {
             // Call invalidate to prevent navbar scrim from scaling. The navbar scrim is drawn
             // directly onto the canvas. To prevent it from being scaled with the canvas, there's a
             // counter scale applied in dispatchDraw.
@@ -1994,12 +2079,13 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
             mTmpPath.reset();
             mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
             canvas.drawPath(mTmpPath, mHeaderPaint);
+        }
 
-            // When the background panel is blurred (or fallback), we don't add header protection.
-            // TODO (b/414671116): Apply header protection whenever search bar is focused.
-            if (Flags.allAppsBlur()) {
-                return;
-            }
+        // When the background panel is blurred (or fallback), we don't add header protection.
+        // TODO (b/414671116): Apply header protection whenever search bar is focused.
+        boolean usePillSearch = LauncherPrefs.APP_DRAWER_PILL_SEARCH_BAR.get(getContext());
+        if (Flags.allAppsBlur() || isBackgroundBlurEnabled() || usePillSearch) {
+            return;
         }
 
         if (DEBUG_HEADER_PROTECTION) {
@@ -2016,71 +2102,73 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         boolean drawHeader = !(headerWithoutAlpha == backgroundWithoutAlpha || mHeaderPaint.getColor() == 0);
         
         if (drawHeader) {
+            final float headerBottomNoScale =
+                    getHeaderBottom() + getVisibleContainerView().getPaddingTop();
+            final float headerHeightNoScale = headerBottomNoScale - topNoScale;
+            final float headerBottomWithScaleOnTablet = topWithScale + headerHeightNoScale * scale;
+            final float headerBottomWithScaleOnPhone = headerBottomNoScale * scale + headerBottomOffset;
+            final FloatingHeaderView headerView = getFloatingHeaderView();
 
-        if (hasBottomSheet) {
-            mHeaderPaint.setAlpha((int) (mHeaderPaint.getAlpha() * bottomSheetBackgroundAlpha));
-        }
-
-        // Draw header on background panel
-        final float headerBottomNoScale =
-                getHeaderBottom() + getVisibleContainerView().getPaddingTop();
-        final float headerHeightNoScale = headerBottomNoScale - topNoScale;
-        final float headerBottomWithScaleOnTablet = topWithScale + headerHeightNoScale * scale;
-        final float headerBottomWithScaleOnPhone = headerBottomNoScale * scale + headerBottomOffset;
-        final FloatingHeaderView headerView = getFloatingHeaderView();
-        if (hasBottomSheet) {
-            // Start adding header protection if search bar or tabs will attach to the top.
-            if (!isSearchBarFloating() || mUsingTabs) {
-                mTmpRectF.set(
-                        leftWithScale,
-                        topWithScale,
-                        rightWithScale,
-                        headerBottomWithScaleOnTablet);
-                mTmpPath.reset();
-                mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
-                canvas.drawPath(mTmpPath, mHeaderPaint);
-            }
-        } else {
-            canvas.drawRect(0, 0, canvas.getWidth(), headerBottomWithScaleOnPhone, mHeaderPaint);
-        }
-
-        // If tab exist (such as work profile), extend header with tab height
-        final int tabsHeight = headerView.getPeripheralProtectionHeight(/* expectedHeight */ false);
-        if (mTabsProtectionAlpha > 0 && tabsHeight != 0) {
-            if (DEBUG_HEADER_PROTECTION) {
-                mHeaderPaint.setColor(Color.BLUE);
-                mHeaderPaint.setAlpha(255);
-            } else {
-                float tabAlpha = getAlpha() * mTabsProtectionAlpha;
+            if (!usePillSearch) {
                 if (hasBottomSheet) {
-                    tabAlpha *= bottomSheetBackgroundAlpha;
+                    mHeaderPaint.setAlpha((int) (mHeaderPaint.getAlpha() * bottomSheetBackgroundAlpha));
                 }
-                mHeaderPaint.setAlpha((int) tabAlpha);
-            }
-            left = 0f;
-            right = canvas.getWidth();
-            if (hasBottomSheet) {
-                left = leftWithScale;
-                right = rightWithScale;
+
+                // Draw header on background panel
+                if (hasBottomSheet) {
+                    // Start adding header protection if search bar or tabs will attach to the top.
+                    if (!isSearchBarFloating() || mUsingTabs) {
+                        mTmpRectF.set(
+                                leftWithScale,
+                                topWithScale,
+                                rightWithScale,
+                                headerBottomWithScaleOnTablet);
+                        mTmpPath.reset();
+                        mTmpPath.addRoundRect(mTmpRectF, mBottomSheetCornerRadii, Direction.CW);
+                        canvas.drawPath(mTmpPath, mHeaderPaint);
+                    }
+                } else {
+                    canvas.drawRect(0, 0, canvas.getWidth(), headerBottomWithScaleOnPhone, mHeaderPaint);
+                }
             }
 
-            final float tabTopWithScale = hasBottomSheet
-                    ? headerBottomWithScaleOnTablet
-                    : headerBottomWithScaleOnPhone;
-            final float tabBottomWithScale = tabTopWithScale + tabsHeight * scale;
+            // If tab exist (such as work profile), extend header with tab height
+            final int tabsHeight = headerView.getPeripheralProtectionHeight(/* expectedHeight */ false);
+            if (mTabsProtectionAlpha > 0 && tabsHeight != 0) {
+                if (DEBUG_HEADER_PROTECTION) {
+                    mHeaderPaint.setColor(Color.BLUE);
+                    mHeaderPaint.setAlpha(255);
+                } else {
+                    float tabAlpha = getAlpha() * mTabsProtectionAlpha;
+                    if (hasBottomSheet) {
+                        tabAlpha *= bottomSheetBackgroundAlpha;
+                    }
+                    mHeaderPaint.setAlpha((int) tabAlpha);
+                }
+                left = 0f;
+                right = canvas.getWidth();
+                if (hasBottomSheet) {
+                    left = leftWithScale;
+                    right = rightWithScale;
+                }
 
-            canvas.drawRect(
-                    left,
-                    tabTopWithScale,
-                    right,
-                    tabBottomWithScale,
-                    mHeaderPaint);
+                final float tabTopWithScale = hasBottomSheet
+                        ? headerBottomWithScaleOnTablet
+                        : headerBottomWithScaleOnPhone;
+                final float tabBottomWithScale = tabTopWithScale + tabsHeight * scale;
+
+                canvas.drawRect(
+                        left,
+                        tabTopWithScale,
+                        right,
+                        tabBottomWithScale,
+                        mHeaderPaint);
             }
         }
 
         String searchPlacement = getSearchBarPlacement();
         boolean searchBottom = "bottom".equals(searchPlacement) && !isSearchBarFloating();
-        if (searchBottom && mSearchContainer != null && mSearchContainer.getVisibility() == VISIBLE) {
+        if (searchBottom && !usePillSearch && mSearchContainer != null && mSearchContainer.getVisibility() == VISIBLE) {
             mHeaderPaint.setColor(mHeaderColor);
             mHeaderPaint.setAlpha((int) (getAlpha() * Color.alpha(mHeaderColor)));
             if (DEBUG_HEADER_PROTECTION) {
@@ -2232,7 +2320,8 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
                     bottomOffset += mSearchContainer.getHeight();
                 } else {
                     String searchPlacement = getSearchBarPlacement();
-                    if ("2".equals(searchPlacement) && mSearchContainer != null
+                    if (("bottom".equals(searchPlacement) || "2".equals(searchPlacement))
+                            && mSearchContainer != null
                             && !AppDrawerStyle.isVerticalPaged(mAppDrawerStyle)) {
                         bottomOffset += mSearchContainer.getHeight();
                     }
